@@ -1,454 +1,468 @@
-<h3 class="fw-bold mb-1">
-  <i class="bi bi-shield-lock me-2 text-warning"></i>Admin Dashboard
-</h3>
-<p class="text-muted mb-4">Manage users, instances, and view audit logs.</p>
+<!-- Page header -->
+<div class="mb-6">
+  <h1 class="text-xl font-bold text-gray-900 tracking-tight">Admin Dashboard</h1>
+  <p class="text-sm text-gray-500 mt-0.5">Manage users, instances, and audit logs</p>
+</div>
 
 {{if .Error}}
-<div class="alert alert-danger d-flex align-items-center gap-2" role="alert">
-  <i class="bi bi-exclamation-triangle-fill flex-shrink-0"></i>
-  <span>{{.Error}}</span>
+<div class="mb-5 flex items-start gap-2.5 p-3.5 bg-red-50 border border-red-200 rounded-xl">
+  <i class="bi bi-exclamation-circle-fill text-red-500 mt-0.5 flex-shrink-0"></i>
+  <p class="text-red-700 text-sm">{{.Error}}</p>
 </div>
 {{end}}
 
 {{if .Success}}
-<div class="alert alert-success d-flex align-items-center gap-2" role="alert">
-  <i class="bi bi-check-circle-fill flex-shrink-0"></i>
-  <span>{{.Success}}</span>
+<div class="mb-5 flex items-start gap-2.5 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+  <i class="bi bi-check-circle-fill text-emerald-500 mt-0.5 flex-shrink-0"></i>
+  <p class="text-emerald-700 text-sm">{{.Success}}</p>
 </div>
 {{end}}
 
-<!-- Nav tabs -->
-<ul class="nav nav-tabs mb-4" id="adminTabs" role="tablist">
-  <li class="nav-item" role="presentation">
-    <button class="nav-link active" role="tab" aria-selected="true"
-            data-bs-toggle="tab" data-bs-target="#users-tab" type="button">
-      <i class="bi bi-people me-1"></i>Users
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" role="tab" aria-selected="false"
-            data-bs-toggle="tab" data-bs-target="#instances-tab" type="button">
-      <i class="bi bi-hdd-network me-1"></i>Instances
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" role="tab" aria-selected="false"
-            data-bs-toggle="tab" data-bs-target="#logs-tab" type="button">
-      <i class="bi bi-journal-text me-1"></i>Audit Logs
-    </button>
-  </li>
-  <li class="nav-item" role="presentation">
-    <button class="nav-link" role="tab" aria-selected="false"
-            data-bs-toggle="tab" data-bs-target="#add-user-tab" type="button">
-      <i class="bi bi-person-plus me-1"></i>Add User
-    </button>
-  </li>
-</ul>
+<!-- ── Tab navigation ──────────────────────────────────────── -->
+<div class="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6 w-fit" id="adminTabs">
+  <button class="tab-btn px-4 py-2 text-sm font-medium rounded-lg bg-white shadow-sm text-gray-900 transition-all"
+          data-tab="users-tab">
+    <i class="bi bi-people mr-1.5"></i>Users
+    <span class="ml-1.5 px-1.5 py-0.5 bg-indigo-100 text-indigo-600 text-xs rounded-md font-semibold">{{len .Users}}</span>
+  </button>
+  <button class="tab-btn px-4 py-2 text-sm font-medium rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-all"
+          data-tab="instances-tab">
+    <i class="bi bi-hdd-network mr-1.5"></i>Instances
+  </button>
+  <button class="tab-btn px-4 py-2 text-sm font-medium rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-all"
+          data-tab="logs-tab">
+    <i class="bi bi-journal-text mr-1.5"></i>Audit Logs
+  </button>
+  <button class="tab-btn px-4 py-2 text-sm font-medium rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-all"
+          data-tab="add-user-tab">
+    <i class="bi bi-person-plus mr-1.5"></i>Add User
+  </button>
+</div>
 
-<div class="tab-content">
+<!-- ── Tab panels ──────────────────────────────────────────── -->
 
-  <!-- ── Users tab ──────────────────────────────────────────── -->
-  <div class="tab-pane fade show active" id="users-tab" role="tabpanel">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold py-3">
-        <i class="bi bi-people me-2 text-primary"></i>All Users
-      </div>
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th>ID</th>
-              <th>Username</th>
-              <th>Role</th>
-              <th>Instance ID</th>
-              <th>Created</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {{range .Users}}
-            <tr>
-              <td class="text-muted small">{{.ID}}</td>
-              <td>
-                <strong>{{.Username}}</strong>
-                {{if eq (printf "%s" .Role) "admin"}}
-                  <span class="badge bg-warning text-dark ms-1">admin</span>
-                {{end}}
-              </td>
-              <td>
-                {{if eq (printf "%s" .Role) "admin"}}
-                  <span class="badge bg-warning text-dark">Admin</span>
-                {{else}}
-                  <span class="badge bg-secondary">Developer</span>
-                {{end}}
-              </td>
-              <td class="font-monospace small">
-                {{if .InstanceID.Valid}}{{.InstanceID.String}}{{else}}<span class="text-muted">&mdash;</span>{{end}}
-              </td>
-              <td class="small text-muted">{{.CreatedAt.Format "02 Jan 2006"}}</td>
-              <td>
-                <div class="d-flex gap-2 flex-wrap">
-                  <!-- Assign Instance -->
-                  <button class="btn btn-outline-primary btn-sm"
-                          data-bs-toggle="modal"
-                          data-bs-target="#assignModal"
-                          data-user-id="{{.ID}}"
-                          data-username="{{.Username}}">
-                    <i class="bi bi-link me-1"></i>Assign
-                  </button>
-                  <!-- Reset PIN -->
-                  <button class="btn btn-outline-warning btn-sm"
-                          data-bs-toggle="modal"
-                          data-bs-target="#resetPinModal"
-                          data-user-id="{{.ID}}"
-                          data-username="{{.Username}}">
-                    <i class="bi bi-key me-1"></i>Reset PIN
-                  </button>
-                  <!-- Delete -->
-                  {{if ne (printf "%s" .Role) "admin"}}
-                  <button class="btn btn-outline-danger btn-sm"
-                          data-bs-toggle="modal"
-                          data-bs-target="#deleteModal"
-                          data-user-id="{{.ID}}"
-                          data-username="{{.Username}}">
-                    <i class="bi bi-trash me-1"></i>Delete
-                  </button>
-                  {{end}}
+<!-- Users -->
+<div class="tab-panel" id="users-tab">
+  <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-gray-800">All Users</h2>
+      <span class="text-xs text-gray-400">{{len .Users}} total</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-100 bg-gray-50/70">
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">User</th>
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Instance ID</th>
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Created</th>
+            <th class="text-right px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {{range .Users}}
+          <tr class="hover:bg-gray-50/50 transition-colors">
+            <td class="px-5 py-3.5">
+              <div class="flex items-center gap-2.5">
+                <div class="w-7 h-7 bg-indigo-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <i class="bi bi-person text-indigo-600" style="font-size:0.7rem"></i>
                 </div>
-              </td>
-            </tr>
-            {{else}}
-            <tr>
-              <td colspan="6" class="text-center text-muted py-4">No users found.</td>
-            </tr>
-            {{end}}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div><!-- /users-tab -->
-
-  <!-- ── Instances tab ─────────────────────────────────────── -->
-  <div class="tab-pane fade" id="instances-tab" role="tabpanel">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold py-3">
-        <i class="bi bi-hdd-network me-2 text-info"></i>Instance Heartbeat Status
-      </div>
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr>
-              <th>Instance ID</th>
-              <th>Status</th>
-              <th>Last Heartbeat</th>
-              <th>Last Active</th>
-            </tr>
-          </thead>
-          <tbody>
-            {{range .Instances}}
-            <tr>
-              <td class="font-monospace">{{.InstanceID}}</td>
-              <td>
-                {{if eq (printf "%s" .Status) "active"}}
-                  <span class="badge bg-success"><i class="bi bi-circle-fill me-1" style="font-size:0.6em;"></i>Active</span>
-                {{else if eq (printf "%s" .Status) "idle"}}
-                  <span class="badge bg-warning text-dark"><i class="bi bi-moon me-1"></i>Idle</span>
-                {{else}}
-                  <span class="badge bg-secondary">Unknown</span>
-                {{end}}
-              </td>
-              <td class="small text-muted">
-                {{if .LastHeartbeatAt.Valid}}{{.LastHeartbeatAt.Time.Format "02 Jan 2006 15:04:05"}}{{else}}&mdash;{{end}}
-              </td>
-              <td class="small text-muted">
-                {{if .LastActiveAt.Valid}}{{.LastActiveAt.Time.Format "02 Jan 2006 15:04:05"}}{{else}}&mdash;{{end}}
-              </td>
-            </tr>
-            {{else}}
-            <tr>
-              <td colspan="4" class="text-center text-muted py-4">No heartbeat data yet.</td>
-            </tr>
-            {{end}}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div><!-- /instances-tab -->
-
-  <!-- ── Logs tab ──────────────────────────────────────────── -->
-  <div class="tab-pane fade" id="logs-tab" role="tabpanel">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header bg-white fw-semibold py-3 d-flex justify-content-between">
-        <span><i class="bi bi-journal-text me-2 text-secondary"></i>Recent Audit Logs</span>
-        <span class="badge bg-secondary">last 100 entries</span>
-      </div>
-      <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0 font-monospace">
-          <thead class="table-light">
-            <tr>
-              <th>Timestamp</th>
-              <th>User</th>
-              <th>Action</th>
-              <th>Instance</th>
-              <th>Metadata</th>
-            </tr>
-          </thead>
-          <tbody>
-            {{range .Logs}}
-            <tr>
-              <td class="text-muted small">{{.Timestamp.Format "02 Jan 15:04:05"}}</td>
-              <td>{{.Username}}</td>
-              <td>
-                {{$action := printf "%s" .Action}}
-                {{if eq $action "START"}}
-                  <span class="badge bg-success">{{.Action}}</span>
-                {{else if eq $action "STOP"}}
-                  <span class="badge bg-secondary">{{.Action}}</span>
-                {{else if eq $action "AUTO_STOP"}}
-                  <span class="badge bg-warning text-dark">{{.Action}}</span>
-                {{else if eq $action "LOGIN"}}
-                  <span class="badge bg-primary">{{.Action}}</span>
-                {{else if eq $action "LOGIN_FAIL"}}
-                  <span class="badge bg-danger">{{.Action}}</span>
-                {{else if eq $action "HEARTBEAT"}}
-                  <span class="badge bg-light text-dark border">{{.Action}}</span>
-                {{else}}
-                  <span class="badge bg-light text-dark border">{{.Action}}</span>
-                {{end}}
-              </td>
-              <td class="small">{{if .InstanceID.Valid}}{{.InstanceID.String}}{{else}}&mdash;{{end}}</td>
-              <td class="small text-muted">{{if .Metadata.Valid}}{{.Metadata.String}}{{else}}&mdash;{{end}}</td>
-            </tr>
-            {{else}}
-            <tr>
-              <td colspan="5" class="text-center text-muted py-4">No log entries yet.</td>
-            </tr>
-            {{end}}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div><!-- /logs-tab -->
-
-  <!-- ── Add User tab ──────────────────────────────────────── -->
-  <div class="tab-pane fade" id="add-user-tab" role="tabpanel">
-    <div class="row">
-      <div class="col-md-6 col-lg-4">
-        <div class="card border-0 shadow-sm">
-          <div class="card-header bg-white fw-semibold py-3">
-            <i class="bi bi-person-plus me-2 text-success"></i>Create New User
-          </div>
-          <div class="card-body p-4">
-            <form method="POST" action="/admin/users" autocomplete="off" novalidate>
-              <div class="mb-3">
-                <label for="new-username" class="form-label fw-medium">Username</label>
-                <input type="text" id="new-username" name="username" class="form-control"
-                       placeholder="jane.doe" required maxlength="64" />
+                <span class="font-medium text-gray-900">{{.Username}}</span>
               </div>
-              <div class="mb-3">
-                <label for="new-pin" class="form-label fw-medium">PIN / Password</label>
-                <input type="password" id="new-pin" name="pin" class="form-control"
-                       placeholder="Minimum 4 characters" required minlength="4" maxlength="128" />
-              </div>
-              <div class="mb-4">
-                <label for="new-role" class="form-label fw-medium">Role</label>
-                <select id="new-role" name="role" class="form-select">
-                  <option value="developer" selected>Developer</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-              <div class="d-grid">
-                <button type="submit" class="btn btn-success">
-                  <i class="bi bi-person-check me-2"></i>Create User
+            </td>
+            <td class="px-5 py-3.5">
+              {{if eq (printf "%s" .Role) "admin"}}
+                <span class="px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-md font-medium border border-amber-200">Admin</span>
+              {{else}}
+                <span class="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-md font-medium border border-slate-200">Developer</span>
+              {{end}}
+            </td>
+            <td class="px-5 py-3.5 font-mono text-xs text-gray-600">
+              {{if .InstanceID.Valid}}
+                <span class="px-2 py-1 bg-gray-100 rounded-md">{{.InstanceID.String}}</span>
+              {{else}}
+                <span class="text-gray-300">Not assigned</span>
+              {{end}}
+            </td>
+            <td class="px-5 py-3.5 text-xs text-gray-400">{{.CreatedAt.Format "02 Jan 2006"}}</td>
+            <td class="px-5 py-3.5">
+              <div class="flex items-center justify-end gap-1">
+                <button
+                  class="px-2.5 py-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
+                  data-action="assign" data-user-id="{{.ID}}" data-username="{{.Username}}">
+                  <i class="bi bi-link-45deg mr-1"></i>Assign
                 </button>
+                <button
+                  class="px-2.5 py-1.5 text-xs font-medium text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                  data-action="reset-pin" data-user-id="{{.ID}}" data-username="{{.Username}}">
+                  <i class="bi bi-key mr-1"></i>Reset PIN
+                </button>
+                {{if ne (printf "%s" .Role) "admin"}}
+                <button
+                  class="px-2.5 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                  data-action="delete" data-user-id="{{.ID}}" data-username="{{.Username}}">
+                  <i class="bi bi-trash mr-1"></i>Delete
+                </button>
+                {{end}}
               </div>
-            </form>
-          </div>
-        </div>
-      </div>
+            </td>
+          </tr>
+          {{else}}
+          <tr>
+            <td colspan="5" class="px-5 py-12 text-center text-sm text-gray-400">No users found.</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
     </div>
-  </div><!-- /add-user-tab -->
+  </div>
+</div>
 
-</div><!-- /tab-content -->
+<!-- Instances -->
+<div class="tab-panel hidden" id="instances-tab">
+  <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100">
+      <h2 class="text-sm font-semibold text-gray-800">Instance Heartbeat Status</h2>
+      <p class="text-xs text-gray-400 mt-0.5">Updated every 10 minutes from running desktop instances</p>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-100 bg-gray-50/70">
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Instance ID</th>
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Heartbeat</th>
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Active</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {{range .Instances}}
+          <tr class="hover:bg-gray-50/50 transition-colors">
+            <td class="px-5 py-3.5 font-mono text-xs text-gray-700">{{.InstanceID}}</td>
+            <td class="px-5 py-3.5">
+              {{if eq (printf "%s" .Status) "active"}}
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-full border border-emerald-200">
+                  <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>Active
+                </span>
+              {{else if eq (printf "%s" .Status) "idle"}}
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-700 text-xs font-semibold rounded-full border border-amber-200">
+                  <i class="bi bi-moon text-xs"></i>Idle
+                </span>
+              {{else}}
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 text-gray-500 text-xs font-semibold rounded-full border border-gray-200">
+                  Unknown
+                </span>
+              {{end}}
+            </td>
+            <td class="px-5 py-3.5 text-xs text-gray-500">
+              {{if .LastHeartbeatAt.Valid}}{{.LastHeartbeatAt.Time.Format "02 Jan 2006 15:04:05"}}{{else}}<span class="text-gray-300">—</span>{{end}}
+            </td>
+            <td class="px-5 py-3.5 text-xs text-gray-500">
+              {{if .LastActiveAt.Valid}}{{.LastActiveAt.Time.Format "02 Jan 2006 15:04:05"}}{{else}}<span class="text-gray-300">—</span>{{end}}
+            </td>
+          </tr>
+          {{else}}
+          <tr>
+            <td colspan="4" class="px-5 py-12 text-center text-sm text-gray-400">No heartbeat data yet.</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Audit Logs -->
+<div class="tab-panel hidden" id="logs-tab">
+  <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+      <h2 class="text-sm font-semibold text-gray-800">Audit Logs</h2>
+      <span class="text-xs text-gray-400">Last 100 entries</span>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-100 bg-gray-50/70">
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Time</th>
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">User</th>
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Action</th>
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Instance</th>
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Metadata</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-50">
+          {{range .Logs}}
+          <tr class="hover:bg-gray-50/50 transition-colors">
+            <td class="px-5 py-3 text-xs text-gray-400 font-mono whitespace-nowrap">{{.Timestamp.Format "02 Jan 15:04:05"}}</td>
+            <td class="px-5 py-3 text-xs font-medium text-gray-700">{{.Username}}</td>
+            <td class="px-5 py-3">
+              {{$a := printf "%s" .Action}}
+              {{if eq $a "START"}}
+                <span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs rounded-md font-semibold border border-emerald-200">START</span>
+              {{else if eq $a "STOP"}}
+                <span class="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-md font-semibold border border-slate-200">STOP</span>
+              {{else if eq $a "AUTO_STOP"}}
+                <span class="px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-md font-semibold border border-amber-200">AUTO_STOP</span>
+              {{else if eq $a "LOGIN"}}
+                <span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs rounded-md font-semibold border border-indigo-200">LOGIN</span>
+              {{else if eq $a "LOGIN_FAIL"}}
+                <span class="px-2 py-0.5 bg-red-50 text-red-700 text-xs rounded-md font-semibold border border-red-200">LOGIN_FAIL</span>
+              {{else if eq $a "LOGOUT"}}
+                <span class="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded-md font-semibold border border-gray-200">LOGOUT</span>
+              {{else}}
+                <span class="px-2 py-0.5 bg-gray-100 text-gray-500 text-xs rounded-md font-semibold border border-gray-200">{{.Action}}</span>
+              {{end}}
+            </td>
+            <td class="px-5 py-3 font-mono text-xs text-gray-500">
+              {{if .InstanceID.Valid}}{{.InstanceID.String}}{{else}}<span class="text-gray-300">—</span>{{end}}
+            </td>
+            <td class="px-5 py-3 text-xs text-gray-400 max-w-xs truncate">
+              {{if .Metadata.Valid}}{{.Metadata.String}}{{else}}<span class="text-gray-300">—</span>{{end}}
+            </td>
+          </tr>
+          {{else}}
+          <tr>
+            <td colspan="5" class="px-5 py-12 text-center text-sm text-gray-400">No log entries yet.</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Add User -->
+<div class="tab-panel hidden" id="add-user-tab">
+  <div class="max-w-sm">
+    <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-100">
+        <h2 class="text-sm font-semibold text-gray-800">Create New User</h2>
+        <p class="text-xs text-gray-400 mt-0.5">The user can log in immediately after creation</p>
+      </div>
+      <form method="POST" action="/admin/users" autocomplete="off" novalidate class="p-5 space-y-4">
+        <div>
+          <label for="new-username" class="block text-sm font-medium text-gray-700 mb-1.5">Username</label>
+          <input type="text" id="new-username" name="username"
+            class="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition placeholder-gray-400"
+            placeholder="jane.doe" required maxlength="64" />
+        </div>
+        <div>
+          <label for="new-pin" class="block text-sm font-medium text-gray-700 mb-1.5">PIN / Password</label>
+          <input type="password" id="new-pin" name="pin"
+            class="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition placeholder-gray-400"
+            placeholder="Minimum 4 characters" required minlength="4" maxlength="128" />
+        </div>
+        <div>
+          <label for="new-role" class="block text-sm font-medium text-gray-700 mb-1.5">Role</label>
+          <select id="new-role" name="role"
+            class="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition">
+            <option value="developer" selected>Developer</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <button type="submit"
+          class="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 px-4 rounded-xl text-sm transition-colors shadow-sm cursor-pointer">
+          <i class="bi bi-person-check"></i>Create User
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
 
 
-<!-- ── Modals ─────────────────────────────────────────────── -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- Modals                                                      -->
+<!-- ═══════════════════════════════════════════════════════════ -->
 
 <!-- Assign Instance Modal -->
-<div class="modal fade" id="assignModal" tabindex="-1" aria-labelledby="assignModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <form method="POST" id="assignForm">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="assignModalLabel">
-            <i class="bi bi-link me-2"></i>Assign EC2 Instance
-          </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <p class="text-muted small">Assigning to: <strong id="assign-username"></strong></p>
-          <div class="mb-3">
-            <label for="instance_id" class="form-label fw-medium">EC2 Instance ID</label>
-            <input type="text" id="instance_id" name="instance_id" class="form-control font-monospace"
-                   placeholder="i-0123456789abcdef0" required maxlength="64" />
-            <div class="form-text">Format: i-xxxxxxxxxxxxxxxxx</div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">
-            <i class="bi bi-link me-1"></i>Assign
-          </button>
-        </div>
+<div id="assignModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" data-close-modal="assignModal"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-200">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div>
+        <h3 class="text-base font-semibold text-gray-900">Assign EC2 Instance</h3>
+        <p class="text-xs text-gray-400 mt-0.5">Assigning to: <span id="assign-username" class="font-medium text-gray-600"></span></p>
+      </div>
+      <button class="text-gray-400 hover:text-gray-600 transition-colors cursor-pointer" data-close-modal="assignModal">
+        <i class="bi bi-x-lg text-sm"></i>
+      </button>
+    </div>
+    <form id="assignForm" method="POST">
+      <div class="px-6 py-5">
+        <label for="instance_id" class="block text-sm font-medium text-gray-700 mb-1.5">EC2 Instance ID</label>
+        <input type="text" id="instance_id" name="instance_id"
+          class="w-full px-3 py-2.5 text-sm font-mono border border-gray-300 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition placeholder-gray-400"
+          placeholder="i-0123456789abcdef0" required maxlength="64" />
+        <p class="text-xs text-gray-400 mt-1.5">Format: i-xxxxxxxxxxxxxxxxx</p>
+      </div>
+      <div class="flex gap-2.5 px-6 pb-5">
+        <button type="button" data-close-modal="assignModal"
+          class="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">
+          Cancel
+        </button>
+        <button type="submit"
+          class="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-colors shadow-sm cursor-pointer">
+          <i class="bi bi-link-45deg mr-1"></i>Assign
+        </button>
       </div>
     </form>
   </div>
 </div>
 
 <!-- Reset PIN Modal -->
-<div class="modal fade" id="resetPinModal" tabindex="-1" aria-labelledby="resetPinModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <form method="POST" id="resetPinForm">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title" id="resetPinModalLabel">
-            <i class="bi bi-key me-2"></i>Reset PIN
-          </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+<div id="resetPinModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" data-close-modal="resetPinModal"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-200">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div>
+        <h3 class="text-base font-semibold text-gray-900">Reset PIN</h3>
+        <p class="text-xs text-gray-400 mt-0.5">Resetting for: <span id="reset-username" class="font-medium text-gray-600"></span></p>
+      </div>
+      <button class="text-gray-400 hover:text-gray-600 transition-colors cursor-pointer" data-close-modal="resetPinModal">
+        <i class="bi bi-x-lg text-sm"></i>
+      </button>
+    </div>
+    <form id="resetPinForm" method="POST">
+      <div class="px-6 py-5 space-y-4">
+        <div class="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+          <i class="bi bi-exclamation-triangle text-amber-500 flex-shrink-0 mt-0.5"></i>
+          <p class="text-xs text-amber-700">The user's active sessions will be invalidated and they will need to log in again.</p>
         </div>
-        <div class="modal-body">
-          <p class="text-muted small">Resetting PIN for: <strong id="reset-username"></strong></p>
-          <div class="alert alert-warning small">
-            <i class="bi bi-exclamation-triangle me-1"></i>
-            The user's active sessions will be invalidated and they will need to log in again.
-          </div>
-          <div class="mb-3">
-            <label for="new_pin" class="form-label fw-medium">New PIN</label>
-            <input type="password" id="new_pin" name="new_pin" class="form-control"
-                   placeholder="Minimum 4 characters" required minlength="4" maxlength="128" />
-          </div>
+        <div>
+          <label for="new_pin" class="block text-sm font-medium text-gray-700 mb-1.5">New PIN</label>
+          <input type="password" id="new_pin" name="new_pin"
+            class="w-full px-3 py-2.5 text-sm border border-gray-300 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition placeholder-gray-400"
+            placeholder="Minimum 4 characters" required minlength="4" maxlength="128" />
         </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-warning">
-            <i class="bi bi-key me-1"></i>Reset PIN
-          </button>
-        </div>
+      </div>
+      <div class="flex gap-2.5 px-6 pb-5">
+        <button type="button" data-close-modal="resetPinModal"
+          class="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">
+          Cancel
+        </button>
+        <button type="submit"
+          class="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-amber-500 hover:bg-amber-600 rounded-xl transition-colors shadow-sm cursor-pointer">
+          <i class="bi bi-key mr-1"></i>Reset PIN
+        </button>
       </div>
     </form>
   </div>
 </div>
 
 <!-- Delete User Modal -->
-<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <form method="POST" id="deleteForm">
-      <div class="modal-content">
-        <div class="modal-header bg-danger text-white">
-          <h5 class="modal-title" id="deleteModalLabel">
-            <i class="bi bi-trash me-2"></i>Delete User
-          </h5>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+<div id="deleteModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" data-close-modal="deleteModal"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-200">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-red-100 rounded-xl flex items-center justify-center">
+          <i class="bi bi-trash text-red-600"></i>
         </div>
-        <div class="modal-body">
-          <p>Are you sure you want to permanently delete user <strong id="delete-username"></strong>?</p>
-          <p class="text-muted small">This will also remove all their sessions. This action cannot be undone.</p>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-danger">
-            <i class="bi bi-trash me-1"></i>Delete
-          </button>
-        </div>
+        <h3 class="text-base font-semibold text-gray-900">Delete User</h3>
+      </div>
+      <button class="text-gray-400 hover:text-gray-600 transition-colors cursor-pointer" data-close-modal="deleteModal">
+        <i class="bi bi-x-lg text-sm"></i>
+      </button>
+    </div>
+    <form id="deleteForm" method="POST">
+      <div class="px-6 py-5">
+        <p class="text-sm text-gray-600">Are you sure you want to delete <strong id="delete-username" class="text-gray-900"></strong>?</p>
+        <p class="text-xs text-gray-400 mt-2">This will permanently remove the account and all their sessions. This action cannot be undone.</p>
+      </div>
+      <div class="flex gap-2.5 px-6 pb-5">
+        <button type="button" data-close-modal="deleteModal"
+          class="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">
+          Cancel
+        </button>
+        <button type="submit"
+          class="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors shadow-sm cursor-pointer">
+          <i class="bi bi-trash mr-1"></i>Delete
+        </button>
       </div>
     </form>
   </div>
 </div>
 
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- Scripts                                                     -->
+<!-- ═══════════════════════════════════════════════════════════ -->
 <script>
 (function () {
 
-  // ── Modal helpers ───────────────────────────────────────────
-  function openModal(modalId) {
-    var modal = document.getElementById(modalId);
-    if (!modal) return;
-    modal.style.display = 'block';
-    modal.classList.add('show');
-    modal.setAttribute('aria-modal', 'true');
-    modal.removeAttribute('aria-hidden');
-    document.body.classList.add('modal-open');
-
-    var backdrop = document.createElement('div');
-    backdrop.className = 'modal-backdrop fade show';
-    backdrop.id = 'modal-backdrop';
-    document.body.appendChild(backdrop);
-
-    // Close when clicking the backdrop.
-    backdrop.addEventListener('click', function () { closeAllModals(); });
-  }
-
-  function closeAllModals() {
-    document.querySelectorAll('.modal.show').forEach(function (modal) {
-      modal.style.display = 'none';
-      modal.classList.remove('show');
-      modal.setAttribute('aria-hidden', 'true');
-      modal.removeAttribute('aria-modal');
+  // ── Tab switcher ───────────────────────────────────────────
+  function activateTab(selectedBtn) {
+    document.querySelectorAll('#adminTabs .tab-btn').forEach(function (btn) {
+      var isSelected = btn === selectedBtn;
+      btn.classList.toggle('bg-white',    isSelected);
+      btn.classList.toggle('shadow-sm',   isSelected);
+      btn.classList.toggle('text-gray-900', isSelected);
+      btn.classList.toggle('text-gray-500', !isSelected);
     });
-    document.body.classList.remove('modal-open');
-    var backdrop = document.getElementById('modal-backdrop');
-    if (backdrop) backdrop.remove();
+    document.querySelectorAll('.tab-panel').forEach(function (panel) {
+      panel.classList.add('hidden');
+    });
+    var target = document.getElementById(selectedBtn.getAttribute('data-tab'));
+    if (target) target.classList.remove('hidden');
   }
 
-  // Open modals via data-bs-toggle="modal" buttons.
-  document.querySelectorAll('[data-bs-toggle="modal"]').forEach(function (btn) {
+  document.querySelectorAll('#adminTabs .tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () { activateTab(btn); });
+  });
+
+  // ── Modal helpers ──────────────────────────────────────────
+  function openModal(id) {
+    var modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal(id) {
+    var modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  // Close buttons and backdrop clicks.
+  document.querySelectorAll('[data-close-modal]').forEach(function (el) {
+    el.addEventListener('click', function () {
+      closeModal(el.getAttribute('data-close-modal'));
+    });
+  });
+
+  // Escape key.
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.fixed.z-50:not(.hidden)').forEach(function (m) {
+        closeModal(m.id);
+      });
+    }
+  });
+
+  // ── Action buttons ─────────────────────────────────────────
+  document.querySelectorAll('[data-action]').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var targetId = btn.getAttribute('data-bs-target').replace('#', '');
+      var action   = btn.getAttribute('data-action');
       var uid      = btn.getAttribute('data-user-id');
       var uname    = btn.getAttribute('data-username');
 
-      // Populate the correct modal before showing it.
-      if (targetId === 'assignModal') {
+      if (action === 'assign') {
         document.getElementById('assign-username').textContent = uname;
         document.getElementById('assignForm').action = '/admin/users/' + uid + '/assign';
-      } else if (targetId === 'resetPinModal') {
+        openModal('assignModal');
+
+      } else if (action === 'reset-pin') {
         document.getElementById('reset-username').textContent = uname;
         document.getElementById('resetPinForm').action = '/admin/users/' + uid + '/reset-pin';
-      } else if (targetId === 'deleteModal') {
+        openModal('resetPinModal');
+
+      } else if (action === 'delete') {
         document.getElementById('delete-username').textContent = uname;
         document.getElementById('deleteForm').action = '/admin/users/' + uid + '/delete';
+        openModal('deleteModal');
       }
-
-      openModal(targetId);
-    });
-  });
-
-  // Close modals via data-bs-dismiss="modal" buttons or Escape key.
-  document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(function (btn) {
-    btn.addEventListener('click', closeAllModals);
-  });
-  document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') closeAllModals();
-  });
-
-  // ── Tab switcher ─────────────────────────────────────────────
-  function activateTab(btn) {
-    document.querySelectorAll('#adminTabs .nav-link').forEach(function (b) {
-      b.classList.remove('active');
-      b.setAttribute('aria-selected', 'false');
-    });
-    document.querySelectorAll('.tab-content .tab-pane').forEach(function (p) {
-      p.classList.remove('show', 'active');
-    });
-    btn.classList.add('active');
-    btn.setAttribute('aria-selected', 'true');
-    var target = document.querySelector(btn.getAttribute('data-bs-target'));
-    if (target) target.classList.add('show', 'active');
-  }
-
-  document.querySelectorAll('#adminTabs .nav-link').forEach(function (btn) {
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      activateTab(btn);
     });
   });
 

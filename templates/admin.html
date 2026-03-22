@@ -1,0 +1,388 @@
+{{define "content"}}
+<h3 class="fw-bold mb-1">
+  <i class="bi bi-shield-lock me-2 text-warning"></i>Admin Dashboard
+</h3>
+<p class="text-muted mb-4">Manage users, instances, and view audit logs.</p>
+
+{{if .Error}}
+<div class="alert alert-danger d-flex align-items-center gap-2" role="alert">
+  <i class="bi bi-exclamation-triangle-fill flex-shrink-0"></i>
+  <span>{{.Error}}</span>
+</div>
+{{end}}
+
+{{if .Success}}
+<div class="alert alert-success d-flex align-items-center gap-2" role="alert">
+  <i class="bi bi-check-circle-fill flex-shrink-0"></i>
+  <span>{{.Success}}</span>
+</div>
+{{end}}
+
+<!-- Nav tabs -->
+<ul class="nav nav-tabs mb-4" id="adminTabs" role="tablist">
+  <li class="nav-item" role="presentation">
+    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#users-tab" type="button">
+      <i class="bi bi-people me-1"></i>Users
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#instances-tab" type="button">
+      <i class="bi bi-hdd-network me-1"></i>Instances
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#logs-tab" type="button">
+      <i class="bi bi-journal-text me-1"></i>Audit Logs
+    </button>
+  </li>
+  <li class="nav-item" role="presentation">
+    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#add-user-tab" type="button">
+      <i class="bi bi-person-plus me-1"></i>Add User
+    </button>
+  </li>
+</ul>
+
+<div class="tab-content">
+
+  <!-- ── Users tab ──────────────────────────────────────────── -->
+  <div class="tab-pane fade show active" id="users-tab" role="tabpanel">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold py-3">
+        <i class="bi bi-people me-2 text-primary"></i>All Users
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Instance ID</th>
+              <th>Created</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Users}}
+            <tr>
+              <td class="text-muted small">{{.ID}}</td>
+              <td>
+                <strong>{{.Username}}</strong>
+                {{if eq (printf "%s" .Role) "admin"}}
+                  <span class="badge bg-warning text-dark ms-1">admin</span>
+                {{end}}
+              </td>
+              <td>
+                {{if eq (printf "%s" .Role) "admin"}}
+                  <span class="badge bg-warning text-dark">Admin</span>
+                {{else}}
+                  <span class="badge bg-secondary">Developer</span>
+                {{end}}
+              </td>
+              <td class="font-monospace small">
+                {{if .InstanceID.Valid}}{{.InstanceID.String}}{{else}}<span class="text-muted">&mdash;</span>{{end}}
+              </td>
+              <td class="small text-muted">{{.CreatedAt.Format "02 Jan 2006"}}</td>
+              <td>
+                <div class="d-flex gap-2 flex-wrap">
+                  <!-- Assign Instance -->
+                  <button class="btn btn-outline-primary btn-sm"
+                          data-bs-toggle="modal"
+                          data-bs-target="#assignModal"
+                          data-user-id="{{.ID}}"
+                          data-username="{{.Username}}">
+                    <i class="bi bi-link me-1"></i>Assign
+                  </button>
+                  <!-- Reset PIN -->
+                  <button class="btn btn-outline-warning btn-sm"
+                          data-bs-toggle="modal"
+                          data-bs-target="#resetPinModal"
+                          data-user-id="{{.ID}}"
+                          data-username="{{.Username}}">
+                    <i class="bi bi-key me-1"></i>Reset PIN
+                  </button>
+                  <!-- Delete -->
+                  {{if ne (printf "%s" .Role) "admin"}}
+                  <button class="btn btn-outline-danger btn-sm"
+                          data-bs-toggle="modal"
+                          data-bs-target="#deleteModal"
+                          data-user-id="{{.ID}}"
+                          data-username="{{.Username}}">
+                    <i class="bi bi-trash me-1"></i>Delete
+                  </button>
+                  {{end}}
+                </div>
+              </td>
+            </tr>
+            {{else}}
+            <tr>
+              <td colspan="6" class="text-center text-muted py-4">No users found.</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /users-tab -->
+
+  <!-- ── Instances tab ─────────────────────────────────────── -->
+  <div class="tab-pane fade" id="instances-tab" role="tabpanel">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold py-3">
+        <i class="bi bi-hdd-network me-2 text-info"></i>Instance Heartbeat Status
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Instance ID</th>
+              <th>Status</th>
+              <th>Last Heartbeat</th>
+              <th>Last Active</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Instances}}
+            <tr>
+              <td class="font-monospace">{{.InstanceID}}</td>
+              <td>
+                {{if eq (printf "%s" .Status) "active"}}
+                  <span class="badge bg-success"><i class="bi bi-circle-fill me-1" style="font-size:0.6em;"></i>Active</span>
+                {{else if eq (printf "%s" .Status) "idle"}}
+                  <span class="badge bg-warning text-dark"><i class="bi bi-moon me-1"></i>Idle</span>
+                {{else}}
+                  <span class="badge bg-secondary">Unknown</span>
+                {{end}}
+              </td>
+              <td class="small text-muted">
+                {{if .LastHeartbeatAt.Valid}}{{.LastHeartbeatAt.Time.Format "02 Jan 2006 15:04:05"}}{{else}}&mdash;{{end}}
+              </td>
+              <td class="small text-muted">
+                {{if .LastActiveAt.Valid}}{{.LastActiveAt.Time.Format "02 Jan 2006 15:04:05"}}{{else}}&mdash;{{end}}
+              </td>
+            </tr>
+            {{else}}
+            <tr>
+              <td colspan="4" class="text-center text-muted py-4">No heartbeat data yet.</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /instances-tab -->
+
+  <!-- ── Logs tab ──────────────────────────────────────────── -->
+  <div class="tab-pane fade" id="logs-tab" role="tabpanel">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white fw-semibold py-3 d-flex justify-content-between">
+        <span><i class="bi bi-journal-text me-2 text-secondary"></i>Recent Audit Logs</span>
+        <span class="badge bg-secondary">last 100 entries</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0 font-monospace">
+          <thead class="table-light">
+            <tr>
+              <th>Timestamp</th>
+              <th>User</th>
+              <th>Action</th>
+              <th>Instance</th>
+              <th>Metadata</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .Logs}}
+            <tr>
+              <td class="text-muted small">{{.Timestamp.Format "02 Jan 15:04:05"}}</td>
+              <td>{{.Username}}</td>
+              <td>
+                {{$action := printf "%s" .Action}}
+                {{if eq $action "START"}}
+                  <span class="badge bg-success">{{.Action}}</span>
+                {{else if eq $action "STOP"}}
+                  <span class="badge bg-secondary">{{.Action}}</span>
+                {{else if eq $action "AUTO_STOP"}}
+                  <span class="badge bg-warning text-dark">{{.Action}}</span>
+                {{else if eq $action "LOGIN"}}
+                  <span class="badge bg-primary">{{.Action}}</span>
+                {{else if eq $action "LOGIN_FAIL"}}
+                  <span class="badge bg-danger">{{.Action}}</span>
+                {{else if eq $action "HEARTBEAT"}}
+                  <span class="badge bg-light text-dark border">{{.Action}}</span>
+                {{else}}
+                  <span class="badge bg-light text-dark border">{{.Action}}</span>
+                {{end}}
+              </td>
+              <td class="small">{{if .InstanceID.Valid}}{{.InstanceID.String}}{{else}}&mdash;{{end}}</td>
+              <td class="small text-muted">{{if .Metadata.Valid}}{{.Metadata.String}}{{else}}&mdash;{{end}}</td>
+            </tr>
+            {{else}}
+            <tr>
+              <td colspan="5" class="text-center text-muted py-4">No log entries yet.</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div><!-- /logs-tab -->
+
+  <!-- ── Add User tab ──────────────────────────────────────── -->
+  <div class="tab-pane fade" id="add-user-tab" role="tabpanel">
+    <div class="row">
+      <div class="col-md-6 col-lg-4">
+        <div class="card border-0 shadow-sm">
+          <div class="card-header bg-white fw-semibold py-3">
+            <i class="bi bi-person-plus me-2 text-success"></i>Create New User
+          </div>
+          <div class="card-body p-4">
+            <form method="POST" action="/admin/users" autocomplete="off" novalidate>
+              <div class="mb-3">
+                <label for="new-username" class="form-label fw-medium">Username</label>
+                <input type="text" id="new-username" name="username" class="form-control"
+                       placeholder="jane.doe" required maxlength="64" />
+              </div>
+              <div class="mb-3">
+                <label for="new-pin" class="form-label fw-medium">PIN / Password</label>
+                <input type="password" id="new-pin" name="pin" class="form-control"
+                       placeholder="Minimum 4 characters" required minlength="4" maxlength="128" />
+              </div>
+              <div class="mb-4">
+                <label for="new-role" class="form-label fw-medium">Role</label>
+                <select id="new-role" name="role" class="form-select">
+                  <option value="developer" selected>Developer</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div class="d-grid">
+                <button type="submit" class="btn btn-success">
+                  <i class="bi bi-person-check me-2"></i>Create User
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /add-user-tab -->
+
+</div><!-- /tab-content -->
+
+
+<!-- ── Modals ─────────────────────────────────────────────── -->
+
+<!-- Assign Instance Modal -->
+<div class="modal fade" id="assignModal" tabindex="-1" aria-labelledby="assignModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="POST" id="assignForm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="assignModalLabel">
+            <i class="bi bi-link me-2"></i>Assign EC2 Instance
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">Assigning to: <strong id="assign-username"></strong></p>
+          <div class="mb-3">
+            <label for="instance_id" class="form-label fw-medium">EC2 Instance ID</label>
+            <input type="text" id="instance_id" name="instance_id" class="form-control font-monospace"
+                   placeholder="i-0123456789abcdef0" required maxlength="64" />
+            <div class="form-text">Format: i-xxxxxxxxxxxxxxxxx</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-link me-1"></i>Assign
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Reset PIN Modal -->
+<div class="modal fade" id="resetPinModal" tabindex="-1" aria-labelledby="resetPinModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="POST" id="resetPinForm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="resetPinModalLabel">
+            <i class="bi bi-key me-2"></i>Reset PIN
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">Resetting PIN for: <strong id="reset-username"></strong></p>
+          <div class="alert alert-warning small">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            The user's active sessions will be invalidated and they will need to log in again.
+          </div>
+          <div class="mb-3">
+            <label for="new_pin" class="form-label fw-medium">New PIN</label>
+            <input type="password" id="new_pin" name="new_pin" class="form-control"
+                   placeholder="Minimum 4 characters" required minlength="4" maxlength="128" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-key me-1"></i>Reset PIN
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Delete User Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="POST" id="deleteForm">
+      <div class="modal-content">
+        <div class="modal-header bg-danger text-white">
+          <h5 class="modal-title" id="deleteModalLabel">
+            <i class="bi bi-trash me-2"></i>Delete User
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p>Are you sure you want to permanently delete user <strong id="delete-username"></strong>?</p>
+          <p class="text-muted small">This will also remove all their sessions. This action cannot be undone.</p>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger">
+            <i class="bi bi-trash me-1"></i>Delete
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+// Wire up modal form actions dynamically from data attributes.
+document.getElementById('assignModal').addEventListener('show.bs.modal', function(e) {
+  const btn = e.relatedTarget;
+  const uid = btn.getAttribute('data-user-id');
+  document.getElementById('assign-username').textContent = btn.getAttribute('data-username');
+  document.getElementById('assignForm').action = '/admin/users/' + uid + '/assign';
+});
+
+document.getElementById('resetPinModal').addEventListener('show.bs.modal', function(e) {
+  const btn = e.relatedTarget;
+  const uid = btn.getAttribute('data-user-id');
+  document.getElementById('reset-username').textContent = btn.getAttribute('data-username');
+  document.getElementById('resetPinForm').action = '/admin/users/' + uid + '/reset-pin';
+});
+
+document.getElementById('deleteModal').addEventListener('show.bs.modal', function(e) {
+  const btn = e.relatedTarget;
+  const uid = btn.getAttribute('data-user-id');
+  document.getElementById('delete-username').textContent = btn.getAttribute('data-username');
+  document.getElementById('deleteForm').action = '/admin/users/' + uid + '/delete';
+});
+</script>
+{{end}}

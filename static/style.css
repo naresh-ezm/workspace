@@ -1,0 +1,92 @@
+/* ─── EC2 Desktop Manager – custom styles ──────────────────── */
+
+:root {
+  --brand-blue: #0d6efd;
+  --nav-height: 56px;
+}
+
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+main {
+  flex: 1;
+}
+
+/* ── Navbar ─────────────────────────────────────────────────── */
+.navbar {
+  min-height: var(--nav-height);
+}
+
+/* ── Cards ──────────────────────────────────────────────────── */
+.card {
+  border-radius: 0.75rem;
+}
+
+.card-header {
+  border-radius: 0.75rem 0.75rem 0 0 !important;
+}
+
+/* ── Tables ─────────────────────────────────────────────────── */
+.table th {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6c757d;
+  font-weight: 600;
+}
+
+.table td {
+  vertical-align: middle;
+}
+
+/* ── Monospace ──────────────────────────────────────────────── */
+.font-monospace {
+  font-size: 0.875em;
+}
+
+/* ── Status badge glow for "running" ───────────────────────── */
+.badge.bg-success {
+  box-shadow: 0 0 0 3px rgba(25, 135, 84, 0.25);
+}
+
+/* ── Login page ─────────────────────────────────────────────── */
+.login-icon {
+  font-size: 4rem;
+  color: var(--brand-blue);
+}
+
+/* ── Nav tabs ───────────────────────────────────────────────── */
+.nav-tabs .nav-link {
+  color: #495057;
+  font-weight: 500;
+}
+
+.nav-tabs .nav-link.active {
+  font-weight: 600;
+  color: var(--brand-blue);
+}
+
+/* ── Spinner overlay for transitioning states ───────────────── */
+.spinner-border-sm {
+  width: 1rem;
+  height: 1rem;
+}
+
+/* ── Responsive table scroll ────────────────────────────────── */
+.table-responsive {
+  border-radius: 0 0 0.75rem 0.75rem;
+}
+
+/* ── Footer ─────────────────────────────────────────────────── */
+footer {
+  font-size: 0.8rem;
+}
+
+/* ── Alert icons ────────────────────────────────────────────── */
+.alert .bi {
+  font-size: 1.1em;
+}

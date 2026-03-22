@@ -4,9 +4,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strconv"
+
+	"github.com/gofiber/fiber/v2"
 
 	"ec2manager/middleware"
 	"ec2manager/models"
@@ -24,13 +25,13 @@ type adminData struct {
 }
 
 // AdminDashboard renders the admin control panel (GET /admin).
-func (h *Handler) AdminDashboard(w http.ResponseWriter, r *http.Request) {
-	user := middleware.GetUser(r)
-	data := adminData{BaseData: BaseData{CurrentUser: user}}
-
-	// Flash messages from redirects.
-	data.Success = r.URL.Query().Get("success")
-	data.Error = r.URL.Query().Get("error")
+func (h *Handler) AdminDashboard(c *fiber.Ctx) error {
+	user := middleware.GetUser(c)
+	data := adminData{
+		BaseData: BaseData{CurrentUser: user},
+		Success:  c.Query("success"),
+		Error:    c.Query("error"),
+	}
 
 	users, err := models.ListUsers(h.DB)
 	if err != nil {
@@ -51,147 +52,129 @@ func (h *Handler) AdminDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	data.Logs = h.enrichLogs(rawLogs, users)
 
-	h.render(w, h.Tmpls.Admin, data)
+	return h.render(c, "admin", data)
 }
 
 // AddUser handles user creation (POST /admin/users).
-func (h *Handler) AddUser(w http.ResponseWriter, r *http.Request) {
-	username := sanitize(r.FormValue("username"))
-	pin := r.FormValue("pin")
-	role := models.Role(r.FormValue("role"))
+func (h *Handler) AddUser(c *fiber.Ctx) error {
+	username := sanitize(c.FormValue("username"))
+	pin := c.FormValue("pin")
+	role := models.Role(c.FormValue("role"))
 
 	if username == "" || pin == "" {
-		h.redirectAdmin(w, r, "", "Username and PIN are required.")
-		return
+		return h.redirectAdmin(c, "", "Username and PIN are required.")
 	}
 	if role != models.RoleAdmin && role != models.RoleDeveloper {
 		role = models.RoleDeveloper
 	}
 	if len(pin) < 4 {
-		h.redirectAdmin(w, r, "", "PIN must be at least 4 characters.")
-		return
+		return h.redirectAdmin(c, "", "PIN must be at least 4 characters.")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(pin), 12)
 	if err != nil {
 		h.Logger.Error("bcrypt failed", "error", err)
-		h.redirectAdmin(w, r, "", "Internal error – please try again.")
-		return
+		return h.redirectAdmin(c, "", "Internal error – please try again.")
 	}
 
 	if _, err := models.CreateUser(h.DB, username, string(hash), role); err != nil {
 		h.Logger.Error("create user failed", "username", username, "error", err)
-		h.redirectAdmin(w, r, "", fmt.Sprintf("Failed to create user: %v", err))
-		return
+		return h.redirectAdmin(c, "", fmt.Sprintf("Failed to create user: %v", err))
 	}
 
-	adminUser := middleware.GetUser(r)
+	adminUser := middleware.GetUser(c)
 	h.Logger.Info("admin created user", "admin", adminUser.Username, "new_user", username, "role", role)
-	h.redirectAdmin(w, r, fmt.Sprintf("User '%s' created successfully.", username), "")
+	return h.redirectAdmin(c, fmt.Sprintf("User '%s' created successfully.", username), "")
 }
 
-// AssignInstance sets the EC2 instance_id for a developer (POST /admin/users/{id}/assign).
-func (h *Handler) AssignInstance(w http.ResponseWriter, r *http.Request) {
-	userID, err := parseID(r.PathValue("id"))
+// AssignInstance sets the EC2 instance_id for a developer (POST /admin/users/:id/assign).
+func (h *Handler) AssignInstance(c *fiber.Ctx) error {
+	userID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
 	}
 
-	instanceID := sanitize(r.FormValue("instance_id"))
+	instanceID := sanitize(c.FormValue("instance_id"))
 	if instanceID == "" {
-		h.redirectAdmin(w, r, "", "Instance ID is required.")
-		return
+		return h.redirectAdmin(c, "", "Instance ID is required.")
 	}
 
 	if err := models.UpdateUserInstance(h.DB, userID, instanceID); err != nil {
 		h.Logger.Error("assign instance failed", "user_id", userID, "instance_id", instanceID, "error", err)
-		h.redirectAdmin(w, r, "", fmt.Sprintf("Failed to assign instance: %v", err))
-		return
+		return h.redirectAdmin(c, "", fmt.Sprintf("Failed to assign instance: %v", err))
 	}
 
-	adminUser := middleware.GetUser(r)
+	adminUser := middleware.GetUser(c)
 	h.Logger.Info("admin assigned instance", "admin", adminUser.Username, "user_id", userID, "instance_id", instanceID)
-	h.redirectAdmin(w, r, "Instance assigned successfully.", "")
+	return h.redirectAdmin(c, "Instance assigned successfully.", "")
 }
 
-// ResetPIN replaces a user's PIN hash (POST /admin/users/{id}/reset-pin).
-func (h *Handler) ResetPIN(w http.ResponseWriter, r *http.Request) {
-	userID, err := parseID(r.PathValue("id"))
+// ResetPIN replaces a user's PIN hash (POST /admin/users/:id/reset-pin).
+func (h *Handler) ResetPIN(c *fiber.Ctx) error {
+	userID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
 	}
 
-	newPIN := r.FormValue("new_pin")
+	newPIN := c.FormValue("new_pin")
 	if len(newPIN) < 4 {
-		h.redirectAdmin(w, r, "", "New PIN must be at least 4 characters.")
-		return
+		return h.redirectAdmin(c, "", "New PIN must be at least 4 characters.")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(newPIN), 12)
 	if err != nil {
 		h.Logger.Error("bcrypt failed", "error", err)
-		h.redirectAdmin(w, r, "", "Internal error – please try again.")
-		return
+		return h.redirectAdmin(c, "", "Internal error – please try again.")
 	}
 
 	if err := models.UpdateUserPINHash(h.DB, userID, string(hash)); err != nil {
 		h.Logger.Error("reset PIN failed", "user_id", userID, "error", err)
-		h.redirectAdmin(w, r, "", fmt.Sprintf("Failed to reset PIN: %v", err))
-		return
+		return h.redirectAdmin(c, "", fmt.Sprintf("Failed to reset PIN: %v", err))
 	}
 
-	// Invalidate all existing sessions for this user so they must re-login.
 	if err := models.DeleteUserSessions(h.DB, userID); err != nil {
 		h.Logger.Warn("failed to clear sessions after PIN reset", "user_id", userID, "error", err)
 	}
 
-	adminUser := middleware.GetUser(r)
+	adminUser := middleware.GetUser(c)
 	h.Logger.Info("admin reset user PIN", "admin", adminUser.Username, "user_id", userID)
-	h.redirectAdmin(w, r, "PIN reset successfully. User sessions have been invalidated.", "")
+	return h.redirectAdmin(c, "PIN reset successfully. User sessions have been invalidated.", "")
 }
 
-// DeleteUser removes a user account (POST /admin/users/{id}/delete).
-func (h *Handler) DeleteUser(w http.ResponseWriter, r *http.Request) {
-	userID, err := parseID(r.PathValue("id"))
+// DeleteUser removes a user account (POST /admin/users/:id/delete).
+func (h *Handler) DeleteUser(c *fiber.Ctx) error {
+	userID, err := strconv.ParseInt(c.Params("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
 	}
 
-	// Prevent self-deletion.
-	adminUser := middleware.GetUser(r)
+	adminUser := middleware.GetUser(c)
 	if adminUser.ID == userID {
-		h.redirectAdmin(w, r, "", "You cannot delete your own account.")
-		return
+		return h.redirectAdmin(c, "", "You cannot delete your own account.")
 	}
 
 	target, err := models.GetUserByID(h.DB, userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			h.redirectAdmin(w, r, "", "User not found.")
-		} else {
-			h.redirectAdmin(w, r, "", "Failed to look up user.")
+			return h.redirectAdmin(c, "", "User not found.")
 		}
-		return
+		return h.redirectAdmin(c, "", "Failed to look up user.")
 	}
 
 	if err := models.DeleteUser(h.DB, userID); err != nil {
 		h.Logger.Error("delete user failed", "user_id", userID, "error", err)
-		h.redirectAdmin(w, r, "", fmt.Sprintf("Failed to delete user: %v", err))
-		return
+		return h.redirectAdmin(c, "", fmt.Sprintf("Failed to delete user: %v", err))
 	}
 
 	h.Logger.Info("admin deleted user", "admin", adminUser.Username, "deleted_user", target.Username)
-	h.redirectAdmin(w, r, fmt.Sprintf("User '%s' deleted.", target.Username), "")
+	return h.redirectAdmin(c, fmt.Sprintf("User '%s' deleted.", target.Username), "")
 }
 
 // ──────────────────────────────────────────────────────────────
 // Internal helpers
 // ──────────────────────────────────────────────────────────────
 
-func (h *Handler) redirectAdmin(w http.ResponseWriter, r *http.Request, success, errMsg string) {
+func (h *Handler) redirectAdmin(c *fiber.Ctx, success, errMsg string) error {
 	q := url.Values{}
 	if success != "" {
 		q.Set("success", success)
@@ -203,7 +186,7 @@ func (h *Handler) redirectAdmin(w http.ResponseWriter, r *http.Request, success,
 	if len(q) > 0 {
 		target += "?" + q.Encode()
 	}
-	http.Redirect(w, r, target, http.StatusSeeOther)
+	return c.Redirect(target, fiber.StatusSeeOther)
 }
 
 // enrichLogs joins log rows with the username from the users list.
@@ -228,8 +211,4 @@ func (h *Handler) enrichLogs(logs []*models.Log, users []*models.User) []*LogEnt
 		entries = append(entries, entry)
 	}
 	return entries
-}
-
-func parseID(s string) (int64, error) {
-	return strconv.ParseInt(s, 10, 64)
 }

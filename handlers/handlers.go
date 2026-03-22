@@ -2,10 +2,9 @@ package handlers
 
 import (
 	"database/sql"
-	"fmt"
-	"html/template"
 	"log/slog"
-	"net/http"
+
+	"github.com/gofiber/fiber/v2"
 
 	awsclient "ec2manager/aws"
 	"ec2manager/middleware"
@@ -18,60 +17,20 @@ type Handler struct {
 	EC2    *awsclient.EC2Client
 	Logger *slog.Logger
 	RL     *middleware.RateLimiter
-	Tmpls  *Templates
 }
 
-// Templates holds pre-parsed template sets for each page.
-type Templates struct {
-	Login     *template.Template
-	Dashboard *template.Template
-	Admin     *template.Template
-}
-
-// LoadTemplates parses all page templates against the shared layout.
-func LoadTemplates() (*Templates, error) {
-	parse := func(pages ...string) (*template.Template, error) {
-		files := append([]string{"templates/layout.html"}, pages...)
-		return template.ParseFiles(files...)
-	}
-
-	login, err := parse("templates/login.html")
-	if err != nil {
-		return nil, fmt.Errorf("login template: %w", err)
-	}
-	dashboard, err := parse("templates/dashboard.html")
-	if err != nil {
-		return nil, fmt.Errorf("dashboard template: %w", err)
-	}
-	admin, err := parse("templates/admin.html")
-	if err != nil {
-		return nil, fmt.Errorf("admin template: %w", err)
-	}
-
-	return &Templates{
-		Login:     login,
-		Dashboard: dashboard,
-		Admin:     admin,
-	}, nil
-}
-
-// New builds a Handler, loading templates from disk.
+// New builds a Handler.
 func New(
 	db *sql.DB,
 	ec2Client *awsclient.EC2Client,
 	logger *slog.Logger,
 	rl *middleware.RateLimiter,
 ) (*Handler, error) {
-	tmpls, err := LoadTemplates()
-	if err != nil {
-		return nil, err
-	}
 	return &Handler{
 		DB:     db,
 		EC2:    ec2Client,
 		Logger: logger,
 		RL:     rl,
-		Tmpls:  tmpls,
 	}, nil
 }
 
@@ -95,13 +54,9 @@ type LogEntry struct {
 // Internal helpers
 // ──────────────────────────────────────────────────────────────
 
-// render executes the named template set, writing the result to w.
-func (h *Handler) render(w http.ResponseWriter, tmpl *template.Template, data any) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.ExecuteTemplate(w, "layout", data); err != nil {
-		h.Logger.Error("template execution failed", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-	}
+// render executes the named page template inside the shared layout.
+func (h *Handler) render(c *fiber.Ctx, page string, data any) error {
+	return c.Render(page, data, "layout")
 }
 
 // logAction persists an audit log entry, logging any write error.

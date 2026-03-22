@@ -1,4 +1,3 @@
-{{define "layout"}}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -51,11 +50,11 @@
   {{end}}
 
   <main class="container-fluid px-4 py-4">
-    {{template "content" .}}
+    {{embed}}
   </main>
 
   <footer class="text-center text-muted small py-3 border-top mt-auto">
-    EC2 Desktop Manager &mdash; powered by Go &amp; AWS SDK v2
+    EC2 Desktop Manager &mdash; powered by Go &amp; Fiber
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
@@ -63,4 +62,3 @@
           crossorigin="anonymous"></script>
 </body>
 </html>
-{{end}}

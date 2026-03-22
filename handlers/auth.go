@@ -6,8 +6,9 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/http"
 	"time"
+
+	"github.com/gofiber/fiber/v2"
 
 	"ec2manager/middleware"
 	"ec2manager/models"
@@ -21,63 +22,57 @@ type loginPageData struct {
 }
 
 // LoginPage renders the login form (GET /login).
-func (h *Handler) LoginPage(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) LoginPage(c *fiber.Ctx) error {
 	// If already logged in, redirect appropriately.
-	if cookie, err := r.Cookie(middleware.SessionCookieName); err == nil {
-		if sess, err := models.GetSessionByToken(h.DB, cookie.Value); err == nil {
+	token := c.Cookies(middleware.SessionCookieName)
+	if token != "" {
+		if sess, err := models.GetSessionByToken(h.DB, token); err == nil {
 			if user, err := models.GetUserByID(h.DB, sess.UserID); err == nil {
 				if user.Role == models.RoleAdmin {
-					http.Redirect(w, r, "/admin", http.StatusSeeOther)
-				} else {
-					http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+					return c.Redirect("/admin", fiber.StatusSeeOther)
 				}
-				return
+				return c.Redirect("/dashboard", fiber.StatusSeeOther)
 			}
 		}
 	}
-	h.render(w, h.Tmpls.Login, loginPageData{})
+	return h.render(c, "login", loginPageData{})
 }
 
 // Login handles PIN authentication (POST /login).
-func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	ip := middleware.GetClientIP(r)
+func (h *Handler) Login(c *fiber.Ctx) error {
+	ip := c.IP()
 
 	if !h.RL.IsAllowed(ip) {
-		h.render(w, h.Tmpls.Login, loginPageData{
+		return h.render(c, "login", loginPageData{
 			Error: "Too many failed attempts. Please wait 15 minutes before trying again.",
 		})
-		return
 	}
 
-	username := sanitize(r.FormValue("username"))
-	pin := r.FormValue("pin")
+	username := sanitize(c.FormValue("username"))
+	pin := c.FormValue("pin")
 
-	renderError := func(msg string) {
+	renderError := func(msg string) error {
 		h.RL.RecordFailedAttempt(ip)
 		h.logAction(nil, models.ActionLoginFail, "", fmt.Sprintf(`{"username":"%s","ip":"%s"}`, username, ip))
 		h.Logger.Warn("failed login attempt", "username", username, "ip", ip)
-		h.render(w, h.Tmpls.Login, loginPageData{Error: msg})
+		return h.render(c, "login", loginPageData{Error: msg})
 	}
 
 	if username == "" || pin == "" {
-		renderError("Username and PIN are required.")
-		return
+		return renderError("Username and PIN are required.")
 	}
 
 	user, err := models.GetUserByUsername(h.DB, username)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			renderError("Invalid username or PIN.")
-			return
+			return renderError("Invalid username or PIN.")
 		}
 		h.Logger.Error("db error during login", "error", err)
-		renderError("An internal error occurred. Please try again.")
-		return
+		return renderError("An internal error occurred. Please try again.")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PINHash), []byte(pin)); err != nil {
-		renderError("Invalid username or PIN.")
-		return
+		return renderError("Invalid username or PIN.")
 	}
 
 	// Success – reset rate-limiter and create session.
@@ -86,50 +81,49 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	token, err := generateToken()
 	if err != nil {
 		h.Logger.Error("failed to generate session token", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
+		return fiber.ErrInternalServerError
 	}
 
 	expiresAt := time.Now().Add(8 * time.Hour)
 	if err := models.CreateSession(h.DB, user.ID, token, expiresAt); err != nil {
 		h.Logger.Error("failed to create session", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
+		return fiber.ErrInternalServerError
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	c.Cookie(&fiber.Cookie{
 		Name:     middleware.SessionCookieName,
 		Value:    token,
 		Path:     "/",
 		Expires:  expiresAt,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		HTTPOnly: true,
+		SameSite: "Lax",
 	})
 
 	h.logAction(&user.ID, models.ActionLogin, "", fmt.Sprintf(`{"ip":"%s"}`, ip))
 	h.Logger.Info("user logged in", "username", user.Username, "role", user.Role, "ip", ip)
 
 	if user.Role == models.RoleAdmin {
-		http.Redirect(w, r, "/admin", http.StatusSeeOther)
-	} else {
-		http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+		return c.Redirect("/admin", fiber.StatusSeeOther)
 	}
+	return c.Redirect("/dashboard", fiber.StatusSeeOther)
 }
 
 // Logout invalidates the session and clears the cookie (POST /logout).
-func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
-	user := middleware.GetUser(r)
+func (h *Handler) Logout(c *fiber.Ctx) error {
+	user := middleware.GetUser(c)
 
-	if cookie, err := r.Cookie(middleware.SessionCookieName); err == nil {
-		_ = models.DeleteSession(h.DB, cookie.Value)
+	token := c.Cookies(middleware.SessionCookieName)
+	if token != "" {
+		_ = models.DeleteSession(h.DB, token)
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	c.Cookie(&fiber.Cookie{
 		Name:     middleware.SessionCookieName,
 		Value:    "",
 		Path:     "/",
+		Expires:  time.Now().Add(-time.Hour),
 		MaxAge:   -1,
-		HttpOnly: true,
+		HTTPOnly: true,
 	})
 
 	if user != nil {
@@ -137,7 +131,7 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 		h.Logger.Info("user logged out", "username", user.Username)
 	}
 
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	return c.Redirect("/login", fiber.StatusSeeOther)
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -152,13 +146,11 @@ func generateToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-// sanitize strips leading/trailing whitespace and limits length to prevent
-// excessively long inputs reaching the database.
+// sanitize strips leading/trailing whitespace and limits input length.
 func sanitize(s string) string {
 	if len(s) > 256 {
 		s = s[:256]
 	}
-	// Trim common whitespace.
 	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t' || s[0] == '\n' || s[0] == '\r') {
 		s = s[1:]
 	}

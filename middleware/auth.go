@@ -1,22 +1,18 @@
 package middleware
 
 import (
-	"context"
 	"database/sql"
-	"net/http"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/gofiber/fiber/v2"
 
 	"ec2manager/models"
 )
 
-// Context key type to avoid collisions with third-party packages.
-type contextKey string
-
 const (
-	UserContextKey    contextKey = "user"
-	SessionCookieName            = "session_token"
+	UserLocalsKey     = "user"
+	SessionCookieName = "session_token"
 )
 
 // ──────────────────────────────────────────────────────────────
@@ -63,10 +59,10 @@ func (rl *RateLimiter) IsAllowed(ip string) bool {
 
 	now := time.Now()
 	if now.Before(rec.lockedUntil) {
-		return false // still locked
+		return false
 	}
 	if now.After(rec.firstSeen.Add(rl.window)) {
-		delete(rl.records, ip) // window expired, reset
+		delete(rl.records, ip)
 		return true
 	}
 	return rec.count < rl.maxAttempts
@@ -111,84 +107,58 @@ func (rl *RateLimiter) periodicCleanup() {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Middleware
+// Fiber Middleware
 // ──────────────────────────────────────────────────────────────
 
-// Auth validates the session cookie and injects the authenticated user into the
-// request context.  On failure it redirects to /login.
-func Auth(db *sql.DB) func(http.HandlerFunc) http.HandlerFunc {
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			cookie, err := r.Cookie(SessionCookieName)
-			if err != nil {
-				http.Redirect(w, r, "/login", http.StatusSeeOther)
-				return
-			}
-
-			session, err := models.GetSessionByToken(db, cookie.Value)
-			if err != nil {
-				clearSessionCookie(w)
-				http.Redirect(w, r, "/login", http.StatusSeeOther)
-				return
-			}
-
-			user, err := models.GetUserByID(db, session.UserID)
-			if err != nil {
-				clearSessionCookie(w)
-				http.Redirect(w, r, "/login", http.StatusSeeOther)
-				return
-			}
-
-			ctx := context.WithValue(r.Context(), UserContextKey, user)
-			next(w, r.WithContext(ctx))
+// Auth validates the session cookie and stores the authenticated user in
+// c.Locals for downstream handlers.  On failure it redirects to /login.
+func Auth(db *sql.DB) fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		token := c.Cookies(SessionCookieName)
+		if token == "" {
+			return c.Redirect("/login", fiber.StatusSeeOther)
 		}
+
+		session, err := models.GetSessionByToken(db, token)
+		if err != nil {
+			clearSessionCookie(c)
+			return c.Redirect("/login", fiber.StatusSeeOther)
+		}
+
+		user, err := models.GetUserByID(db, session.UserID)
+		if err != nil {
+			clearSessionCookie(c)
+			return c.Redirect("/login", fiber.StatusSeeOther)
+		}
+
+		c.Locals(UserLocalsKey, user)
+		return c.Next()
 	}
 }
 
 // AdminOnly enforces that the authenticated user holds the admin role.
-// Must be used after the Auth middleware.
-func AdminOnly(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		user := GetUser(r)
-		if user == nil || user.Role != models.RoleAdmin {
-			http.Error(w, "Forbidden – admin access required", http.StatusForbidden)
-			return
-		}
-		next(w, r)
+// Must be used after Auth.
+func AdminOnly(c *fiber.Ctx) error {
+	user := GetUser(c)
+	if user == nil || user.Role != models.RoleAdmin {
+		return fiber.NewError(fiber.StatusForbidden, "Forbidden – admin access required")
 	}
+	return c.Next()
 }
 
-// GetUser extracts the authenticated user from the request context.
-func GetUser(r *http.Request) *models.User {
-	user, _ := r.Context().Value(UserContextKey).(*models.User)
+// GetUser extracts the authenticated user stored by the Auth middleware.
+func GetUser(c *fiber.Ctx) *models.User {
+	user, _ := c.Locals(UserLocalsKey).(*models.User)
 	return user
 }
 
-// GetClientIP extracts the real client IP, honouring X-Forwarded-For when
-// the app sits behind a reverse-proxy.
-func GetClientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// X-Forwarded-For may contain a comma-separated list; take the first.
-		parts := strings.SplitN(xff, ",", 2)
-		return strings.TrimSpace(parts[0])
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
-	}
-	// Strip port from RemoteAddr (e.g. "1.2.3.4:56789" → "1.2.3.4").
-	addr := r.RemoteAddr
-	if idx := strings.LastIndex(addr, ":"); idx != -1 {
-		return addr[:idx]
-	}
-	return addr
-}
-
-func clearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
+func clearSessionCookie(c *fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{
 		Name:     SessionCookieName,
 		Value:    "",
 		Path:     "/",
+		Expires:  time.Now().Add(-time.Hour),
 		MaxAge:   -1,
-		HttpOnly: true,
+		HTTPOnly: true,
 	})
 }

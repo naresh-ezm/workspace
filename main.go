@@ -5,11 +5,15 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/template/html/v2"
 
 	awsclient "ec2manager/aws"
 	"ec2manager/config"
@@ -32,80 +36,90 @@ func main() {
 	defer logFile.Close()
 
 	multiWriter := io.MultiWriter(os.Stdout, logFile)
-	logger := slog.New(slog.NewJSONHandler(multiWriter, &slog.HandlerOptions{
+	slogger := slog.New(slog.NewJSONHandler(multiWriter, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	}))
-	slog.SetDefault(logger)
+	slog.SetDefault(slogger)
 
 	// ── Database ──────────────────────────────────────────────
 	database, err := db.Initialize(cfg)
 	if err != nil {
-		logger.Error("database initialisation failed", "error", err)
+		slogger.Error("database initialisation failed", "error", err)
 		os.Exit(1)
 	}
 	defer database.Close()
-	logger.Info("database ready", "path", cfg.DBPath)
+	slogger.Info("database ready", "path", cfg.DBPath)
 
 	// ── AWS ───────────────────────────────────────────────────
 	ec2Client, err := awsclient.NewEC2Client(context.Background(), cfg.AWSRegion)
 	if err != nil {
-		logger.Error("AWS client initialisation failed", "error", err)
+		slogger.Error("AWS client initialisation failed", "error", err)
 		os.Exit(1)
 	}
-	logger.Info("AWS EC2 client ready", "region", cfg.AWSRegion)
+	slogger.Info("AWS EC2 client ready", "region", cfg.AWSRegion)
 
 	// ── Rate Limiter ──────────────────────────────────────────
-	// Allow 5 failed login attempts per 15-minute window before locking for 15 min.
 	rl := middleware.NewRateLimiter(5, 15*time.Minute, 15*time.Minute)
 
-	// ── Handlers ──────────────────────────────────────────────
-	h, err := handlers.New(database, ec2Client, logger, rl)
+	// ── Template Engine ───────────────────────────────────────
+	engine := html.New("./templates", ".html")
+	// engine.Reload(true) // uncomment for hot-reload during development
+
+	// ── Fiber App ────────────────────────────────────────────
+	app := fiber.New(fiber.Config{
+		Views:             engine,
+		ProxyHeader:       fiber.HeaderXForwardedFor,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		ErrorHandler: errorHandler(slogger),
+	})
+
+	// ── Global Middleware ────────────────────────────────────
+	app.Use(recover.New())
+	app.Use(logger.New(logger.Config{
+		Format: `{"time":"${time}","method":"${method}","path":"${path}","status":${status},"latency":"${latency}","ip":"${ip}"}` + "\n",
+		Output: multiWriter,
+	}))
+
+	// ── Handlers ─────────────────────────────────────────────
+	h, err := handlers.New(database, ec2Client, slogger, rl)
 	if err != nil {
-		logger.Error("handler initialisation failed", "error", err)
+		slogger.Error("handler initialisation failed", "error", err)
 		os.Exit(1)
 	}
 
-	// ── Router ────────────────────────────────────────────────
-	mux := http.NewServeMux()
+	// ── Static Files ─────────────────────────────────────────
+	app.Static("/static", "./static")
 
-	// Static assets.
-	mux.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
-
-	// Public routes (no auth).
-	mux.HandleFunc("POST /api/heartbeat", h.Heartbeat)
-
-	// Auth routes.
-	mux.HandleFunc("GET /login", h.LoginPage)
-	mux.HandleFunc("POST /login", h.Login)
-	mux.HandleFunc("POST /logout", middleware.Auth(database)(h.Logout))
-
-	// Default: redirect "/" → "/login".
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+	// ── Public Routes ────────────────────────────────────────
+	app.Post("/api/heartbeat", h.Heartbeat)
+	app.Get("/login", h.LoginPage)
+	app.Post("/login", h.Login)
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.Redirect("/login", fiber.StatusSeeOther)
 	})
 
-	// Developer routes (session auth required).
+	// ── Auth Routes ───────────────────────────────────────────
 	authMW := middleware.Auth(database)
-	mux.HandleFunc("GET /dashboard", authMW(h.Dashboard))
-	mux.HandleFunc("POST /start-instance", authMW(h.StartInstance))
-	mux.HandleFunc("POST /stop-instance", authMW(h.StopInstance))
+	app.Post("/logout", authMW, h.Logout)
 
-	// Admin routes (session auth + admin role required).
-	adminMW := func(fn http.HandlerFunc) http.HandlerFunc {
-		return authMW(middleware.AdminOnly(fn))
-	}
-	mux.HandleFunc("GET /admin", adminMW(h.AdminDashboard))
-	mux.HandleFunc("POST /admin/users", adminMW(h.AddUser))
-	mux.HandleFunc("POST /admin/users/{id}/assign", adminMW(h.AssignInstance))
-	mux.HandleFunc("POST /admin/users/{id}/reset-pin", adminMW(h.ResetPIN))
-	mux.HandleFunc("POST /admin/users/{id}/delete", adminMW(h.DeleteUser))
+	// ── Developer Routes ─────────────────────────────────────
+	app.Get("/dashboard", authMW, h.Dashboard)
+	app.Post("/start-instance", authMW, h.StartInstance)
+	app.Post("/stop-instance", authMW, h.StopInstance)
+
+	// ── Admin Routes ─────────────────────────────────────────
+	adminMW := middleware.AdminOnly
+	admin := app.Group("/admin", authMW, adminMW)
+	admin.Get("/", h.AdminDashboard)
+	admin.Post("/users", h.AddUser)
+	admin.Post("/users/:id/assign", h.AssignInstance)
+	admin.Post("/users/:id/reset-pin", h.ResetPIN)
+	admin.Post("/users/:id/delete", h.DeleteUser)
 
 	// ── Auto-stop Scheduler ───────────────────────────────────
-	sched := scheduler.New(database, ec2Client, logger)
+	sched := scheduler.New(database, ec2Client, slogger)
 	sched.Start()
 	defer sched.Stop()
 
@@ -115,68 +129,39 @@ func main() {
 		defer ticker.Stop()
 		for range ticker.C {
 			if err := models.CleanExpiredSessions(database); err != nil {
-				logger.Warn("session cleanup error", "error", err)
+				slogger.Warn("session cleanup error", "error", err)
 			}
 		}
 	}()
 
-	// ── HTTP Server ───────────────────────────────────────────
-	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      requestLogger(logger)(mux),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
-
-	// Graceful shutdown on SIGINT / SIGTERM.
+	// ── Graceful Shutdown ────────────────────────────────────
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		logger.Info("server listening", "addr", srv.Addr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Error("server error", "error", err)
+		slogger.Info("server listening", "addr", ":"+cfg.Port)
+		if err := app.Listen(":" + cfg.Port); err != nil {
+			slogger.Error("server error", "error", err)
 			os.Exit(1)
 		}
 	}()
 
 	<-quit
-	logger.Info("shutdown signal received, draining connections…")
+	slogger.Info("shutdown signal received, draining connections…")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
-		logger.Error("graceful shutdown failed", "error", err)
+	if err := app.ShutdownWithTimeout(15 * time.Second); err != nil {
+		slogger.Error("graceful shutdown failed", "error", err)
 	}
-	logger.Info("server stopped cleanly")
+	slogger.Info("server stopped cleanly")
 }
 
-// requestLogger is a minimal structured HTTP access-log middleware.
-func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			start := time.Now()
-			rw := &captureWriter{ResponseWriter: w, status: http.StatusOK}
-			next.ServeHTTP(rw, r)
-			logger.Info("http",
-				"method", r.Method,
-				"path", r.URL.Path,
-				"status", rw.status,
-				"duration_ms", time.Since(start).Milliseconds(),
-				"remote_addr", middleware.GetClientIP(r),
-			)
-		})
+func errorHandler(logger *slog.Logger) fiber.ErrorHandler {
+	return func(c *fiber.Ctx, err error) error {
+		code := fiber.StatusInternalServerError
+		if e, ok := err.(*fiber.Error); ok {
+			code = e.Code
+		}
+		logger.Error("unhandled error", "status", code, "path", c.Path(), "error", err)
+		return c.Status(code).SendString(err.Error())
 	}
-}
-
-// captureWriter wraps http.ResponseWriter to capture the status code for logging.
-type captureWriter struct {
-	http.ResponseWriter
-	status int
-}
-
-func (cw *captureWriter) WriteHeader(code int) {
-	cw.status = code
-	cw.ResponseWriter.WriteHeader(code)
 }

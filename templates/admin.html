@@ -20,22 +20,26 @@
 <!-- Nav tabs -->
 <ul class="nav nav-tabs mb-4" id="adminTabs" role="tablist">
   <li class="nav-item" role="presentation">
-    <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#users-tab" type="button">
+    <button class="nav-link active" role="tab" aria-selected="true"
+            data-bs-toggle="tab" data-bs-target="#users-tab" type="button">
       <i class="bi bi-people me-1"></i>Users
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#instances-tab" type="button">
+    <button class="nav-link" role="tab" aria-selected="false"
+            data-bs-toggle="tab" data-bs-target="#instances-tab" type="button">
       <i class="bi bi-hdd-network me-1"></i>Instances
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#logs-tab" type="button">
+    <button class="nav-link" role="tab" aria-selected="false"
+            data-bs-toggle="tab" data-bs-target="#logs-tab" type="button">
       <i class="bi bi-journal-text me-1"></i>Audit Logs
     </button>
   </li>
   <li class="nav-item" role="presentation">
-    <button class="nav-link" data-bs-toggle="tab" data-bs-target="#add-user-tab" type="button">
+    <button class="nav-link" role="tab" aria-selected="false"
+            data-bs-toggle="tab" data-bs-target="#add-user-tab" type="button">
       <i class="bi bi-person-plus me-1"></i>Add User
     </button>
   </li>
@@ -383,4 +387,39 @@ document.getElementById('deleteModal').addEventListener('show.bs.modal', functio
   document.getElementById('delete-username').textContent = btn.getAttribute('data-username');
   document.getElementById('deleteForm').action = '/admin/users/' + uid + '/delete';
 });
+
+// ── Tab switcher ─────────────────────────────────────────────
+// Plain-JS implementation so tabs work regardless of whether the
+// Bootstrap bundle has finished loading from the CDN.
+(function () {
+  function activateTab(btn) {
+    // Deactivate all tab buttons.
+    document.querySelectorAll('#adminTabs .nav-link').forEach(function (b) {
+      b.classList.remove('active');
+      b.setAttribute('aria-selected', 'false');
+    });
+
+    // Hide all tab panes.
+    document.querySelectorAll('.tab-content .tab-pane').forEach(function (p) {
+      p.classList.remove('show', 'active');
+    });
+
+    // Activate the clicked button.
+    btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'true');
+
+    // Show the target pane.
+    var target = document.querySelector(btn.getAttribute('data-bs-target'));
+    if (target) {
+      target.classList.add('show', 'active');
+    }
+  }
+
+  document.querySelectorAll('#adminTabs .nav-link').forEach(function (btn) {
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      activateTab(btn);
+    });
+  });
+}());
 </script>

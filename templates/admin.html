@@ -366,53 +366,83 @@
 </div>
 
 <script>
-// Wire up modal form actions dynamically from data attributes.
-document.getElementById('assignModal').addEventListener('show.bs.modal', function(e) {
-  const btn = e.relatedTarget;
-  const uid = btn.getAttribute('data-user-id');
-  document.getElementById('assign-username').textContent = btn.getAttribute('data-username');
-  document.getElementById('assignForm').action = '/admin/users/' + uid + '/assign';
-});
-
-document.getElementById('resetPinModal').addEventListener('show.bs.modal', function(e) {
-  const btn = e.relatedTarget;
-  const uid = btn.getAttribute('data-user-id');
-  document.getElementById('reset-username').textContent = btn.getAttribute('data-username');
-  document.getElementById('resetPinForm').action = '/admin/users/' + uid + '/reset-pin';
-});
-
-document.getElementById('deleteModal').addEventListener('show.bs.modal', function(e) {
-  const btn = e.relatedTarget;
-  const uid = btn.getAttribute('data-user-id');
-  document.getElementById('delete-username').textContent = btn.getAttribute('data-username');
-  document.getElementById('deleteForm').action = '/admin/users/' + uid + '/delete';
-});
-
-// ── Tab switcher ─────────────────────────────────────────────
-// Plain-JS implementation so tabs work regardless of whether the
-// Bootstrap bundle has finished loading from the CDN.
 (function () {
+
+  // ── Modal helpers ───────────────────────────────────────────
+  function openModal(modalId) {
+    var modal = document.getElementById(modalId);
+    if (!modal) return;
+    modal.style.display = 'block';
+    modal.classList.add('show');
+    modal.setAttribute('aria-modal', 'true');
+    modal.removeAttribute('aria-hidden');
+    document.body.classList.add('modal-open');
+
+    var backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop fade show';
+    backdrop.id = 'modal-backdrop';
+    document.body.appendChild(backdrop);
+
+    // Close when clicking the backdrop.
+    backdrop.addEventListener('click', function () { closeAllModals(); });
+  }
+
+  function closeAllModals() {
+    document.querySelectorAll('.modal.show').forEach(function (modal) {
+      modal.style.display = 'none';
+      modal.classList.remove('show');
+      modal.setAttribute('aria-hidden', 'true');
+      modal.removeAttribute('aria-modal');
+    });
+    document.body.classList.remove('modal-open');
+    var backdrop = document.getElementById('modal-backdrop');
+    if (backdrop) backdrop.remove();
+  }
+
+  // Open modals via data-bs-toggle="modal" buttons.
+  document.querySelectorAll('[data-bs-toggle="modal"]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var targetId = btn.getAttribute('data-bs-target').replace('#', '');
+      var uid      = btn.getAttribute('data-user-id');
+      var uname    = btn.getAttribute('data-username');
+
+      // Populate the correct modal before showing it.
+      if (targetId === 'assignModal') {
+        document.getElementById('assign-username').textContent = uname;
+        document.getElementById('assignForm').action = '/admin/users/' + uid + '/assign';
+      } else if (targetId === 'resetPinModal') {
+        document.getElementById('reset-username').textContent = uname;
+        document.getElementById('resetPinForm').action = '/admin/users/' + uid + '/reset-pin';
+      } else if (targetId === 'deleteModal') {
+        document.getElementById('delete-username').textContent = uname;
+        document.getElementById('deleteForm').action = '/admin/users/' + uid + '/delete';
+      }
+
+      openModal(targetId);
+    });
+  });
+
+  // Close modals via data-bs-dismiss="modal" buttons or Escape key.
+  document.querySelectorAll('[data-bs-dismiss="modal"]').forEach(function (btn) {
+    btn.addEventListener('click', closeAllModals);
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeAllModals();
+  });
+
+  // ── Tab switcher ─────────────────────────────────────────────
   function activateTab(btn) {
-    // Deactivate all tab buttons.
     document.querySelectorAll('#adminTabs .nav-link').forEach(function (b) {
       b.classList.remove('active');
       b.setAttribute('aria-selected', 'false');
     });
-
-    // Hide all tab panes.
     document.querySelectorAll('.tab-content .tab-pane').forEach(function (p) {
       p.classList.remove('show', 'active');
     });
-
-    // Activate the clicked button.
     btn.classList.add('active');
     btn.setAttribute('aria-selected', 'true');
-
-    // Show the target pane.
     var target = document.querySelector(btn.getAttribute('data-bs-target'));
-    if (target) {
-      target.classList.add('show', 'active');
-    }
+    if (target) target.classList.add('show', 'active');
   }
 
   document.querySelectorAll('#adminTabs .nav-link').forEach(function (btn) {
@@ -421,5 +451,6 @@ document.getElementById('deleteModal').addEventListener('show.bs.modal', functio
       activateTab(btn);
     });
   });
+
 }());
 </script>

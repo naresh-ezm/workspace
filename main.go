@@ -83,7 +83,7 @@ func main() {
 	}))
 
 	// ── Handlers ─────────────────────────────────────────────
-	h, err := handlers.New(database, ec2Client, slogger, rl)
+	h, err := handlers.New(database, ec2Client, slogger, rl, cfg)
 	if err != nil {
 		slogger.Error("handler initialisation failed", "error", err)
 		os.Exit(1)
@@ -115,6 +115,7 @@ func main() {
 	admin.Get("/", h.AdminDashboard)
 	admin.Post("/users", h.AddUser)
 	admin.Post("/users/:id/assign", h.AssignInstance)
+	admin.Post("/users/:id/provision", h.ProvisionWorkspace)
 	admin.Post("/users/:id/reset-pin", h.ResetPIN)
 	admin.Post("/users/:id/delete", h.DeleteUser)
 

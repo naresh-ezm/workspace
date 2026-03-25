@@ -3,6 +3,7 @@ package awsclient
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -94,4 +95,83 @@ func (c *EC2Client) IsStopped(ctx context.Context, instanceID string) (bool, err
 		return false, err
 	}
 	return info.State == string(types.InstanceStateNameStopped), nil
+}
+
+// WorkspaceLaunchInput holds the parameters for provisioning a new workspace instance.
+type WorkspaceLaunchInput struct {
+	AMIID           string
+	InstanceType    string
+	KeyName         string
+	SecurityGroupID string
+	SubnetID        string
+	NameTag         string // e.g. "workspace-alice"
+}
+
+// LaunchInstance starts one new instance from the given AMI and returns its instance ID.
+func (c *EC2Client) LaunchInstance(ctx context.Context, in WorkspaceLaunchInput) (string, error) {
+	out, err := c.client.RunInstances(ctx, &ec2.RunInstancesInput{
+		ImageId:      aws.String(in.AMIID),
+		InstanceType: types.InstanceType(in.InstanceType),
+		MinCount:     aws.Int32(1),
+		MaxCount:     aws.Int32(1),
+		KeyName:      aws.String(in.KeyName),
+		NetworkInterfaces: []types.InstanceNetworkInterfaceSpecification{
+			{
+				DeviceIndex:              aws.Int32(0),
+				AssociatePublicIpAddress: aws.Bool(false), // EIP is assigned separately
+				SubnetId:                 aws.String(in.SubnetID),
+				Groups:                   []string{in.SecurityGroupID},
+			},
+		},
+		TagSpecifications: []types.TagSpecification{
+			{
+				ResourceType: types.ResourceTypeInstance,
+				Tags: []types.Tag{
+					{Key: aws.String("Name"), Value: aws.String(in.NameTag)},
+					{Key: aws.String("ManagedBy"), Value: aws.String("ec2manager")},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("run instances: %w", err)
+	}
+	if len(out.Instances) == 0 {
+		return "", fmt.Errorf("run instances returned no instances")
+	}
+	return aws.ToString(out.Instances[0].InstanceId), nil
+}
+
+// WaitUntilRunning blocks until the instance reaches the "running" state or ctx expires.
+func (c *EC2Client) WaitUntilRunning(ctx context.Context, instanceID string) error {
+	waiter := ec2.NewInstanceRunningWaiter(c.client)
+	return waiter.Wait(ctx, &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	}, 5*time.Minute)
+}
+
+// AllocateAndAssociateEIP allocates a new Elastic IP and associates it with instanceID.
+// Returns the allocated public IP address. On association failure the EIP is released
+// automatically to avoid leaving orphaned addresses.
+func (c *EC2Client) AllocateAndAssociateEIP(ctx context.Context, instanceID string) (string, error) {
+	alloc, err := c.client.AllocateAddress(ctx, &ec2.AllocateAddressInput{
+		Domain: types.DomainTypeVpc,
+	})
+	if err != nil {
+		return "", fmt.Errorf("allocate EIP: %w", err)
+	}
+
+	_, err = c.client.AssociateAddress(ctx, &ec2.AssociateAddressInput{
+		InstanceId:   aws.String(instanceID),
+		AllocationId: alloc.AllocationId,
+	})
+	if err != nil {
+		_, _ = c.client.ReleaseAddress(ctx, &ec2.ReleaseAddressInput{
+			AllocationId: alloc.AllocationId,
+		})
+		return "", fmt.Errorf("associate EIP %s with instance %s: %w",
+			aws.ToString(alloc.AllocationId), instanceID, err)
+	}
+
+	return aws.ToString(alloc.PublicIp), nil
 }

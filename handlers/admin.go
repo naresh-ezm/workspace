@@ -1,14 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 
+	awsclient "ec2manager/aws"
 	"ec2manager/middleware"
 	"ec2manager/models"
 
@@ -168,6 +171,77 @@ func (h *Handler) DeleteUser(c *fiber.Ctx) error {
 
 	h.Logger.Info("admin deleted user", "admin", adminUser.Username, "deleted_user", target.Username)
 	return h.redirectAdmin(c, fmt.Sprintf("User '%s' deleted.", target.Username), "")
+}
+
+// ProvisionWorkspace launches a new EC2 instance from the configured AMI,
+// waits for it to reach the running state, assigns an Elastic IP, and links
+// the instance to the target developer in the database.
+// POST /admin/users/:id/provision
+func (h *Handler) ProvisionWorkspace(c *fiber.Ctx) error {
+	userID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
+	}
+
+	target, err := models.GetUserByID(h.DB, userID)
+	if err != nil {
+		return h.redirectAdmin(c, "", "User not found.")
+	}
+
+	cfg := h.Config
+	if cfg.WorkspaceAMI == "" || cfg.WorkspaceSubnetID == "" || cfg.WorkspaceSecurityGroupID == "" {
+		return h.redirectAdmin(c, "", "Workspace provisioning is not configured (missing WORKSPACE_AMI, WORKSPACE_SUBNET_ID, or WORKSPACE_SECURITY_GROUP_ID).")
+	}
+
+	adminUser := middleware.GetUser(c)
+	nameTag := fmt.Sprintf("workspace-%s", target.Username)
+
+	h.Logger.Info("provisioning workspace", "admin", adminUser.Username, "for_user", target.Username)
+
+	// 1. Launch the instance.
+	instanceID, err := h.EC2.LaunchInstance(c.Context(), awsclient.WorkspaceLaunchInput{
+		AMIID:           cfg.WorkspaceAMI,
+		InstanceType:    cfg.WorkspaceInstanceType,
+		KeyName:         cfg.WorkspaceKeyName,
+		SecurityGroupID: cfg.WorkspaceSecurityGroupID,
+		SubnetID:        cfg.WorkspaceSubnetID,
+		NameTag:         nameTag,
+	})
+	if err != nil {
+		h.Logger.Error("LaunchInstance failed", "error", err)
+		return h.redirectAdmin(c, "", fmt.Sprintf("Failed to launch instance: %v", err))
+	}
+
+	h.Logger.Info("instance launched, waiting for running state", "instance_id", instanceID)
+
+	// 2. Wait until running (up to 6 minutes).
+	waitCtx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+	defer cancel()
+	if err := h.EC2.WaitUntilRunning(waitCtx, instanceID); err != nil {
+		h.Logger.Error("WaitUntilRunning failed", "instance_id", instanceID, "error", err)
+		return h.redirectAdmin(c, "", fmt.Sprintf("Instance %s launched but did not reach running state in time. Assign it manually once ready.", instanceID))
+	}
+
+	// 3. Allocate and associate an Elastic IP.
+	publicIP, err := h.EC2.AllocateAndAssociateEIP(context.Background(), instanceID)
+	if err != nil {
+		h.Logger.Error("AllocateAndAssociateEIP failed", "instance_id", instanceID, "error", err)
+		return h.redirectAdmin(c, "", fmt.Sprintf("Instance %s is running but EIP assignment failed: %v", instanceID, err))
+	}
+
+	// 4. Persist to the database.
+	if err := models.UpdateUserInstance(h.DB, userID, instanceID); err != nil {
+		h.Logger.Error("UpdateUserInstance failed", "user_id", userID, "instance_id", instanceID, "error", err)
+		return h.redirectAdmin(c, "", fmt.Sprintf("Instance %s launched at %s but DB update failed: %v — assign it manually.", instanceID, publicIP, err))
+	}
+
+	meta := fmt.Sprintf(`{"ami":"%s","instance_type":"%s","public_ip":"%s","provisioned_by":"%s"}`,
+		cfg.WorkspaceAMI, cfg.WorkspaceInstanceType, publicIP, adminUser.Username)
+	h.logAction(&adminUser.ID, models.ActionProvision, instanceID, meta)
+	h.Logger.Info("workspace provisioned", "instance_id", instanceID, "public_ip", publicIP, "user", target.Username)
+
+	return h.redirectAdmin(c,
+		fmt.Sprintf("Workspace provisioned for '%s': instance %s at %s", target.Username, instanceID, publicIP), "")
 }
 
 // ──────────────────────────────────────────────────────────────

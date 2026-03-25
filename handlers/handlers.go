@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	awsclient "ec2manager/aws"
+	"ec2manager/config"
 	"ec2manager/middleware"
 	"ec2manager/models"
 )
@@ -17,6 +18,7 @@ type Handler struct {
 	EC2    *awsclient.EC2Client
 	Logger *slog.Logger
 	RL     *middleware.RateLimiter
+	Config *config.Config
 }
 
 // New builds a Handler.
@@ -25,12 +27,14 @@ func New(
 	ec2Client *awsclient.EC2Client,
 	logger *slog.Logger,
 	rl *middleware.RateLimiter,
+	cfg *config.Config,
 ) (*Handler, error) {
 	return &Handler{
 		DB:     db,
 		EC2:    ec2Client,
 		Logger: logger,
 		RL:     rl,
+		Config: cfg,
 	}, nil
 }
 

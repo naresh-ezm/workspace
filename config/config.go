@@ -14,6 +14,13 @@ type Config struct {
 	AdminUsername   string
 	AdminPIN        string
 	SessionDuration int // hours
+
+	// Workspace provisioning
+	WorkspaceAMI             string
+	WorkspaceInstanceType    string
+	WorkspaceKeyName         string
+	WorkspaceSecurityGroupID string
+	WorkspaceSubnetID        string
 }
 
 // Load reads configuration from environment variables, falling back to defaults.
@@ -26,6 +33,12 @@ func Load() *Config {
 		AdminUsername:   getEnv("ADMIN_USERNAME", "admin"),
 		AdminPIN:        getEnv("ADMIN_PIN", "admin1234"),
 		SessionDuration: getEnvInt("SESSION_DURATION_HOURS", 8),
+
+		WorkspaceAMI:             getEnv("WORKSPACE_AMI", ""),
+		WorkspaceInstanceType:    getEnv("WORKSPACE_INSTANCE_TYPE", "t3.medium"),
+		WorkspaceKeyName:         getEnv("WORKSPACE_KEY_NAME", ""),
+		WorkspaceSecurityGroupID: getEnv("WORKSPACE_SECURITY_GROUP_ID", ""),
+		WorkspaceSubnetID:        getEnv("WORKSPACE_SUBNET_ID", ""),
 	}
 }
 

@@ -16,6 +16,7 @@ const (
 	ActionAutoStop  ActionType = "AUTO_STOP"
 	ActionHeartbeat ActionType = "HEARTBEAT"
 	ActionLoginFail ActionType = "LOGIN_FAIL"
+	ActionProvision ActionType = "PROVISION"
 )
 
 // Log represents a single audit-log row.

@@ -1,5 +1,6 @@
 # Binaries
 ec2manager
+createadmin
 *.exe
 *.out
 

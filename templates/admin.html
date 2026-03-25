@@ -34,6 +34,10 @@
     <i class="bi bi-journal-text mr-1.5"></i>Audit Logs
   </button>
   <button class="tab-btn px-4 py-2 text-sm font-medium rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-all"
+          data-tab="applogs-tab">
+    <i class="bi bi-terminal mr-1.5"></i>App Logs
+  </button>
+  <button class="tab-btn px-4 py-2 text-sm font-medium rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-all"
           data-tab="add-user-tab">
     <i class="bi bi-person-plus mr-1.5"></i>Add User
   </button>
@@ -92,6 +96,13 @@
                   data-action="assign" data-user-id="{{.ID}}" data-username="{{.Username}}">
                   <i class="bi bi-link-45deg mr-1"></i>Assign
                 </button>
+                {{if and (eq (printf "%s" .Role) "developer") (not .InstanceID.Valid)}}
+                <button
+                  class="px-2.5 py-1.5 text-xs font-medium text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 rounded-lg transition-colors cursor-pointer"
+                  data-action="provision" data-user-id="{{.ID}}" data-username="{{.Username}}">
+                  <i class="bi bi-plus-circle mr-1"></i>Provision
+                </button>
+                {{end}}
                 <button
                   class="px-2.5 py-1.5 text-xs font-medium text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
                   data-action="reset-pin" data-user-id="{{.ID}}" data-username="{{.Username}}">
@@ -227,6 +238,25 @@
           {{end}}
         </tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<!-- App Logs -->
+<div class="tab-panel hidden" id="applogs-tab">
+  <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+      <div>
+        <h2 class="text-sm font-semibold text-gray-800">Application Logs</h2>
+        <p class="text-xs text-gray-400 mt-0.5">Last 200 lines from app.log</p>
+      </div>
+      <button id="refreshLogsBtn"
+        class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm cursor-pointer">
+        <i class="bi bi-arrow-clockwise" id="refreshIcon"></i>Refresh
+      </button>
+    </div>
+    <div id="appLogContainer" class="p-4 bg-gray-950 rounded-b-2xl min-h-48 max-h-[600px] overflow-y-auto">
+      <p class="text-gray-500 text-xs font-mono">Click Refresh to load application logs.</p>
     </div>
   </div>
 </div>
@@ -384,6 +414,50 @@
 </div>
 
 
+<!-- Provision Workspace Modal -->
+<div id="provisionModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" data-close-modal="provisionModal"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-200">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-emerald-100 rounded-xl flex items-center justify-center">
+          <i class="bi bi-plus-circle text-emerald-600"></i>
+        </div>
+        <div>
+          <h3 class="text-base font-semibold text-gray-900">Provision Workspace</h3>
+          <p class="text-xs text-gray-400 mt-0.5">For: <span id="provision-username" class="font-medium text-gray-600"></span></p>
+        </div>
+      </div>
+      <button class="text-gray-400 hover:text-gray-600 transition-colors cursor-pointer" data-close-modal="provisionModal">
+        <i class="bi bi-x-lg text-sm"></i>
+      </button>
+    </div>
+    <form id="provisionForm" method="POST">
+      <div class="px-6 py-5 space-y-3">
+        <div class="flex items-start gap-2.5 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+          <i class="bi bi-info-circle text-emerald-600 flex-shrink-0 mt-0.5"></i>
+          <p class="text-xs text-emerald-800">A new EC2 instance will be launched from the configured AMI, an Elastic IP will be allocated and associated, and the instance will be assigned to this developer automatically.</p>
+        </div>
+        <div class="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+          <i class="bi bi-exclamation-triangle text-amber-500 flex-shrink-0 mt-0.5"></i>
+          <p class="text-xs text-amber-700">This will incur AWS costs. The operation may take up to 5 minutes to complete.</p>
+        </div>
+      </div>
+      <div class="flex gap-2.5 px-6 pb-5">
+        <button type="button" data-close-modal="provisionModal"
+          class="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">
+          Cancel
+        </button>
+        <button type="submit"
+          class="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors shadow-sm cursor-pointer">
+          <i class="bi bi-plus-circle mr-1"></i>Provision
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- Scripts                                                     -->
 <!-- ═══════════════════════════════════════════════════════════ -->
@@ -462,8 +536,99 @@
         document.getElementById('delete-username').textContent = uname;
         document.getElementById('deleteForm').action = '/admin/users/' + uid + '/delete';
         openModal('deleteModal');
+
+      } else if (action === 'provision') {
+        document.getElementById('provision-username').textContent = uname;
+        document.getElementById('provisionForm').action = '/admin/users/' + uid + '/provision';
+        openModal('provisionModal');
       }
     });
+  });
+
+  // ── App Logs refresh ───────────────────────────────────────
+  var levelColors = {
+    DEBUG: 'text-gray-400',
+    INFO:  'text-sky-400',
+    WARN:  'text-amber-400',
+    ERROR: 'text-red-400',
+  };
+
+  function renderLogLine(raw) {
+    try {
+      var entry = JSON.parse(raw);
+      var level = (entry.level || 'INFO').toUpperCase();
+      var color = levelColors[level] || 'text-gray-300';
+      var time  = (entry.time  || '').replace('T', ' ').replace(/\.\d+Z$/, '');
+      var msg   = entry.msg || '';
+
+      // Collect extra key=value pairs (exclude the three main ones).
+      var extras = [];
+      Object.keys(entry).forEach(function (k) {
+        if (k !== 'time' && k !== 'level' && k !== 'msg') {
+          extras.push(k + '=' + JSON.stringify(entry[k]));
+        }
+      });
+
+      var line = document.createElement('div');
+      line.className = 'font-mono text-xs leading-5 flex gap-2';
+      line.innerHTML =
+        '<span class="text-gray-600 flex-shrink-0">' + escHtml(time) + '</span>' +
+        '<span class="font-semibold flex-shrink-0 w-12 ' + color + '">' + escHtml(level) + '</span>' +
+        '<span class="text-gray-200">' + escHtml(msg) + '</span>' +
+        (extras.length ? '<span class="text-gray-500">' + escHtml(extras.join(' ')) + '</span>' : '');
+      return line;
+    } catch (_) {
+      // Not valid JSON — render as plain text.
+      var line = document.createElement('div');
+      line.className = 'font-mono text-xs leading-5 text-gray-400';
+      line.textContent = raw;
+      return line;
+    }
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  document.getElementById('refreshLogsBtn').addEventListener('click', function () {
+    var container = document.getElementById('appLogContainer');
+    var icon      = document.getElementById('refreshIcon');
+
+    icon.classList.add('animate-spin');
+    container.innerHTML = '<p class="text-gray-500 text-xs font-mono">Loading…</p>';
+
+    fetch('/admin/app-logs')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        icon.classList.remove('animate-spin');
+        container.innerHTML = '';
+
+        if (data.error) {
+          container.innerHTML = '<p class="text-red-400 text-xs font-mono">' + escHtml(data.error) + '</p>';
+          return;
+        }
+
+        var lines = data.lines || [];
+        if (lines.length === 0) {
+          container.innerHTML = '<p class="text-gray-500 text-xs font-mono">No log entries found.</p>';
+          return;
+        }
+
+        lines.forEach(function (raw) {
+          container.appendChild(renderLogLine(raw));
+        });
+
+        // Scroll to bottom so the newest entries are visible.
+        container.scrollTop = container.scrollHeight;
+      })
+      .catch(function (err) {
+        icon.classList.remove('animate-spin');
+        container.innerHTML = '<p class="text-red-400 text-xs font-mono">Request failed: ' + escHtml(String(err)) + '</p>';
+      });
   });
 
 }());

@@ -113,6 +113,7 @@ func main() {
 	adminMW := middleware.AdminOnly
 	admin := app.Group("/admin", authMW, adminMW)
 	admin.Get("/", h.AdminDashboard)
+	admin.Get("/app-logs", h.AppLogs)
 	admin.Post("/users", h.AddUser)
 	admin.Post("/users/:id/assign", h.AssignInstance)
 	admin.Post("/users/:id/provision", h.ProvisionWorkspace)

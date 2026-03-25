@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strconv"
 	"time"
 
@@ -244,9 +246,43 @@ func (h *Handler) ProvisionWorkspace(c *fiber.Ctx) error {
 		fmt.Sprintf("Workspace provisioned for '%s': instance %s at %s", target.Username, instanceID, publicIP), "")
 }
 
+// AppLogs returns the last 200 lines of the application log file as JSON.
+// GET /admin/app-logs
+func (h *Handler) AppLogs(c *fiber.Ctx) error {
+	lines, err := tailFile(h.Config.LogFile, 200)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": fmt.Sprintf("could not read log file: %v", err),
+		})
+	}
+	return c.JSON(fiber.Map{"lines": lines})
+}
+
 // ──────────────────────────────────────────────────────────────
 // Internal helpers
 // ──────────────────────────────────────────────────────────────
+
+// tailFile reads up to n last lines from the file at path.
+func tailFile(path string, n int) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return lines, nil
+}
 
 func (h *Handler) redirectAdmin(c *fiber.Ctx, success, errMsg string) error {
 	q := url.Values{}

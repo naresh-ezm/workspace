@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"ec2manager/config"
@@ -31,6 +32,9 @@ func Initialize(cfg *config.Config) (*sql.DB, error) {
 	}
 	if err := createSchema(db); err != nil {
 		return nil, fmt.Errorf("create schema: %w", err)
+	}
+	if err := migrateSchema(db); err != nil {
+		return nil, fmt.Errorf("migrate schema: %w", err)
 	}
 	if err := seedAdmin(db, cfg); err != nil {
 		return nil, fmt.Errorf("seed admin: %w", err)
@@ -74,17 +78,49 @@ func createSchema(db *sql.DB) error {
 			last_active_at    DATETIME,
 			status            TEXT DEFAULT 'unknown'
 		)`,
+		`CREATE TABLE IF NOT EXISTS mfa_challenges (
+			token      TEXT PRIMARY KEY,
+			user_id    INTEGER NOT NULL,
+			expires_at DATETIME NOT NULL,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
 		// Indexes for frequent query patterns.
 		`CREATE INDEX IF NOT EXISTS idx_sessions_token   ON sessions(session_token)`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_user    ON sessions(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_logs_timestamp   ON logs(timestamp DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_logs_user        ON logs(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_mfa_challenges_user ON mfa_challenges(user_id)`,
 	}
 
 	for _, stmt := range stmts {
 		if _, err := db.Exec(stmt); err != nil {
 			return fmt.Errorf("exec statement: %w", err)
 		}
+	}
+	return nil
+}
+
+// migrateSchema applies additive changes to existing tables (safe to run on
+// a database that was created before these columns existed).
+func migrateSchema(db *sql.DB) error {
+	migrations := []string{
+		`ALTER TABLE users ADD COLUMN totp_secret  TEXT`,
+		`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`,
+	}
+	for _, stmt := range migrations {
+		if err := addColumnIfMissing(db, stmt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// addColumnIfMissing executes an ALTER TABLE ADD COLUMN statement and
+// silently ignores the error when the column already exists.
+func addColumnIfMissing(db *sql.DB, stmt string) error {
+	_, err := db.Exec(stmt)
+	if err != nil && !strings.Contains(err.Error(), "duplicate column") {
+		return fmt.Errorf("migration %q: %w", stmt, err)
 	}
 	return nil
 }

@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/template/html/v2"
@@ -23,6 +27,9 @@ import (
 	"ec2manager/models"
 	"ec2manager/scheduler"
 )
+
+//go:embed all:web/build
+var svelteFS embed.FS
 
 func main() {
 	cfg := config.Load()
@@ -92,24 +99,25 @@ func main() {
 	// ── Static Files ─────────────────────────────────────────
 	app.Static("/static", "./static")
 
-	// ── Public Routes ────────────────────────────────────────
+	// ── Legacy HTML Template Routes (kept for backward compat) ─
 	app.Post("/api/heartbeat", h.Heartbeat)
 	app.Get("/login", h.LoginPage)
 	app.Post("/login", h.Login)
+	app.Get("/mfa/verify", h.MFAVerifyPage)
+	app.Post("/mfa/verify", h.MFAVerify)
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.Redirect("/login", fiber.StatusSeeOther)
 	})
 
-	// ── Auth Routes ───────────────────────────────────────────
 	authMW := middleware.Auth(database)
 	app.Post("/logout", authMW, h.Logout)
-
-	// ── Developer Routes ─────────────────────────────────────
+	app.Get("/mfa/setup", authMW, h.MFASetupPage)
+	app.Post("/mfa/setup", authMW, h.MFASetup)
+	app.Post("/mfa/disable", authMW, h.MFADisable)
 	app.Get("/dashboard", authMW, h.Dashboard)
 	app.Post("/start-instance", authMW, h.StartInstance)
 	app.Post("/stop-instance", authMW, h.StopInstance)
 
-	// ── Admin Routes ─────────────────────────────────────────
 	adminMW := middleware.AdminOnly
 	admin := app.Group("/admin", authMW, adminMW)
 	admin.Get("/", h.AdminDashboard)
@@ -118,7 +126,46 @@ func main() {
 	admin.Post("/users/:id/assign", h.AssignInstance)
 	admin.Post("/users/:id/provision", h.ProvisionWorkspace)
 	admin.Post("/users/:id/reset-pin", h.ResetPIN)
+	admin.Post("/users/:id/reset-mfa", h.ResetMFA)
 	admin.Post("/users/:id/delete", h.DeleteUser)
+
+	// ── JSON API Routes (used by the Svelte frontend) ────────
+	apiAuthMW := h.APIAuthMW()
+	apiAdminMW := handlers.APIAdminOnlyMW
+
+	// Public API
+	app.Post("/api/login", h.APILogin)
+	app.Post("/api/mfa/verify", h.APIMFAVerify)
+
+	// Authenticated API
+	app.Get("/api/me", apiAuthMW, h.APIMe)
+	app.Post("/api/logout", apiAuthMW, h.APILogout)
+	app.Get("/api/mfa/setup", apiAuthMW, h.APIMFASetupGet)
+	app.Post("/api/mfa/setup", apiAuthMW, h.APIMFASetupPost)
+	app.Post("/api/mfa/disable", apiAuthMW, h.APIMFADisable)
+	app.Get("/api/dashboard", apiAuthMW, h.APIDashboard)
+	app.Post("/api/start-instance", apiAuthMW, h.APIStartInstance)
+	app.Post("/api/stop-instance", apiAuthMW, h.APIStopInstance)
+
+	// Admin API
+	apiAdmin := app.Group("/api/admin", apiAuthMW, apiAdminMW)
+	apiAdmin.Get("/", h.APIAdminDashboard)
+	apiAdmin.Get("/app-logs", h.AppLogs)
+	apiAdmin.Post("/users", h.APIAddUser)
+	apiAdmin.Post("/users/:id/assign", h.APIAssignInstance)
+	apiAdmin.Post("/users/:id/provision", h.APIProvisionWorkspace)
+	apiAdmin.Post("/users/:id/reset-pin", h.APIResetPIN)
+	apiAdmin.Post("/users/:id/reset-mfa", h.APIResetMFA)
+	apiAdmin.Post("/users/:id/delete", h.APIDeleteUser)
+
+	// ── Svelte SPA ───────────────────────────────────────────
+	// Embedded at compile time from web/build; must come after all API routes.
+	stripped, _ := fs.Sub(svelteFS, "web/build")
+	app.Use("/", filesystem.New(filesystem.Config{
+		Root:         http.FS(stripped),
+		Index:        "index.html",
+		NotFoundFile: "index.html", // SPA fallback for client-side routing
+	}))
 
 	// ── Auto-stop Scheduler ───────────────────────────────────
 	sched := scheduler.New(database, ec2Client, slogger)
@@ -132,6 +179,9 @@ func main() {
 		for range ticker.C {
 			if err := models.CleanExpiredSessions(database); err != nil {
 				slogger.Warn("session cleanup error", "error", err)
+			}
+			if err := models.CleanExpiredChallenges(database); err != nil {
+				slogger.Warn("mfa challenge cleanup error", "error", err)
 			}
 		}
 	}()

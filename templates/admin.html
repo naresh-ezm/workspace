@@ -18,6 +18,70 @@
 </div>
 {{end}}
 
+<!-- ── Admin MFA Card ─────────────────────────────────────── -->
+<div class="bg-white border border-gray-200 rounded-2xl shadow-sm px-5 py-4 flex items-center justify-between mb-6">
+  <div class="flex items-center gap-3">
+    <div class="w-9 h-9 bg-indigo-100 rounded-xl flex items-center justify-center flex-shrink-0">
+      <i class="bi bi-shield-lock text-indigo-600"></i>
+    </div>
+    <div>
+      <p class="text-sm font-semibold text-gray-800">Your Two-Factor Authentication</p>
+      {{if .CurrentUser.TOTPEnabled}}
+        <p class="text-xs text-emerald-600 font-medium mt-0.5"><i class="bi bi-check-circle-fill mr-1"></i>Enabled</p>
+      {{else}}
+        <p class="text-xs text-gray-400 mt-0.5">Not enabled — your admin account has no MFA protection</p>
+      {{end}}
+    </div>
+  </div>
+  {{if .CurrentUser.TOTPEnabled}}
+    <button data-action="disable-mfa-admin"
+      class="px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer border border-red-200">
+      <i class="bi bi-shield-x mr-1"></i>Disable
+    </button>
+  {{else}}
+    <a href="/mfa/setup"
+      class="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors shadow-sm">
+      <i class="bi bi-shield-plus mr-1"></i>Set up MFA
+    </a>
+  {{end}}
+</div>
+
+<!-- Disable MFA Modal (admin's own account) -->
+<div id="disableAdminMfaModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" id="disableAdminMfaBackdrop"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm border border-gray-200 p-6 space-y-4">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+        <i class="bi bi-shield-x text-red-600"></i>
+      </div>
+      <h3 class="text-base font-semibold text-gray-900">Disable Your MFA</h3>
+    </div>
+    <p class="text-sm text-gray-600">Enter your current authenticator code to confirm.</p>
+    <form method="POST" action="/mfa/disable" autocomplete="off">
+      <input
+        type="text"
+        name="code"
+        inputmode="numeric"
+        pattern="[0-9]{6}"
+        maxlength="6"
+        required
+        placeholder="000000"
+        class="w-full text-center text-2xl font-mono tracking-[0.4em] px-4 py-3 border border-gray-300 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition mb-4"
+      />
+      <div class="flex gap-2.5">
+        <button type="button" id="cancelAdminMfa"
+          class="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">
+          Cancel
+        </button>
+        <button type="submit"
+          class="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-xl transition-colors cursor-pointer">
+          Disable MFA
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- ── Tab navigation ──────────────────────────────────────── -->
 <div class="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6 w-fit" id="adminTabs">
   <button class="tab-btn px-4 py-2 text-sm font-medium rounded-lg bg-white shadow-sm text-gray-900 transition-all"
@@ -60,6 +124,7 @@
             <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
             <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Instance ID</th>
             <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Created</th>
+            <th class="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">MFA</th>
             <th class="text-right px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
           </tr>
         </thead>
@@ -90,6 +155,15 @@
             </td>
             <td class="px-5 py-3.5 text-xs text-gray-400">{{.CreatedAt.Format "02 Jan 2006"}}</td>
             <td class="px-5 py-3.5">
+              {{if .TOTPEnabled}}
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs rounded-md font-medium border border-emerald-200">
+                  <i class="bi bi-shield-check"></i>On
+                </span>
+              {{else}}
+                <span class="px-2 py-0.5 bg-gray-100 text-gray-400 text-xs rounded-md font-medium border border-gray-200">Off</span>
+              {{end}}
+            </td>
+            <td class="px-5 py-3.5">
               <div class="flex items-center justify-end gap-1">
                 <button
                   class="px-2.5 py-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded-lg transition-colors cursor-pointer"
@@ -108,6 +182,13 @@
                   data-action="reset-pin" data-user-id="{{.ID}}" data-username="{{.Username}}">
                   <i class="bi bi-key mr-1"></i>Reset PIN
                 </button>
+                {{if .TOTPEnabled}}
+                <button
+                  class="px-2.5 py-1.5 text-xs font-medium text-orange-600 hover:text-orange-800 hover:bg-orange-50 rounded-lg transition-colors cursor-pointer"
+                  data-action="reset-mfa" data-user-id="{{.ID}}" data-username="{{.Username}}">
+                  <i class="bi bi-shield-x mr-1"></i>Reset MFA
+                </button>
+                {{end}}
                 {{if ne (printf "%s" .Role) "admin"}}
                 <button
                   class="px-2.5 py-1.5 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
@@ -120,7 +201,7 @@
           </tr>
           {{else}}
           <tr>
-            <td colspan="5" class="px-5 py-12 text-center text-sm text-gray-400">No users found.</td>
+            <td colspan="6" class="px-5 py-12 text-center text-sm text-gray-400">No users found.</td>
           </tr>
           {{end}}
         </tbody>
@@ -458,6 +539,47 @@
 </div>
 
 
+<!-- Reset MFA Modal -->
+<div id="resetMfaModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" data-close-modal="resetMfaModal"></div>
+  <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md border border-gray-200">
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 bg-orange-100 rounded-xl flex items-center justify-center">
+          <i class="bi bi-shield-x text-orange-600"></i>
+        </div>
+        <div>
+          <h3 class="text-base font-semibold text-gray-900">Reset MFA</h3>
+          <p class="text-xs text-gray-400 mt-0.5">For: <span id="reset-mfa-username" class="font-medium text-gray-600"></span></p>
+        </div>
+      </div>
+      <button class="text-gray-400 hover:text-gray-600 cursor-pointer" data-close-modal="resetMfaModal">
+        <i class="bi bi-x-lg text-sm"></i>
+      </button>
+    </div>
+    <form id="resetMfaForm" method="POST">
+      <div class="px-6 py-5 space-y-3">
+        <p class="text-sm text-gray-600">This will immediately disable MFA and invalidate all active sessions for this user.</p>
+        <div class="flex items-start gap-2.5 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+          <i class="bi bi-exclamation-triangle text-amber-500 flex-shrink-0 mt-0.5"></i>
+          <p class="text-xs text-amber-700">Only use this for account recovery when the user has lost access to their authenticator device.</p>
+        </div>
+      </div>
+      <div class="flex gap-2.5 px-6 pb-5">
+        <button type="button" data-close-modal="resetMfaModal"
+          class="flex-1 px-4 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer">
+          Cancel
+        </button>
+        <button type="submit"
+          class="flex-1 px-4 py-2.5 text-sm font-medium text-white bg-orange-600 hover:bg-orange-700 rounded-xl transition-colors cursor-pointer">
+          <i class="bi bi-shield-x mr-1"></i>Reset MFA
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+
 <!-- ═══════════════════════════════════════════════════════════ -->
 <!-- Scripts                                                     -->
 <!-- ═══════════════════════════════════════════════════════════ -->
@@ -541,9 +663,29 @@
         document.getElementById('provision-username').textContent = uname;
         document.getElementById('provisionForm').action = '/admin/users/' + uid + '/provision';
         openModal('provisionModal');
+
+      } else if (action === 'reset-mfa') {
+        document.getElementById('reset-mfa-username').textContent = uname;
+        document.getElementById('resetMfaForm').action = '/admin/users/' + uid + '/reset-mfa';
+        openModal('resetMfaModal');
       }
     });
   });
+
+  // ── Admin own-account MFA disable ─────────────────────────
+  (function () {
+    var modal    = document.getElementById('disableAdminMfaModal');
+    var openBtn  = document.querySelector('[data-action="disable-mfa-admin"]');
+    var closeBtn = document.getElementById('cancelAdminMfa');
+    var backdrop = document.getElementById('disableAdminMfaBackdrop');
+
+    function open()  { if (modal) { modal.classList.remove('hidden'); document.body.style.overflow = 'hidden'; } }
+    function close() { if (modal) { modal.classList.add('hidden'); document.body.style.overflow = ''; } }
+
+    if (openBtn)  openBtn.addEventListener('click', open);
+    if (closeBtn) closeBtn.addEventListener('click', close);
+    if (backdrop) backdrop.addEventListener('click', close);
+  }());
 
   // ── App Logs refresh ───────────────────────────────────────
   var levelColors = {

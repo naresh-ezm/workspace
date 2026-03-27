@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/pquerna/otp/totp"
 
 	"ec2manager/middleware"
 	"ec2manager/models"
@@ -75,8 +76,33 @@ func (h *Handler) Login(c *fiber.Ctx) error {
 		return renderError("Invalid username or PIN.")
 	}
 
-	// Success – reset rate-limiter and create session.
+	// Success – reset rate-limiter.
 	h.RL.Reset(ip)
+
+	// If the user has MFA enabled, issue a short-lived challenge and redirect
+	// to the TOTP verification page instead of creating a session immediately.
+	if user.TOTPEnabled {
+		challengeToken, err := generateToken()
+		if err != nil {
+			h.Logger.Error("failed to generate MFA challenge token", "error", err)
+			return fiber.ErrInternalServerError
+		}
+		expiresAt := time.Now().Add(5 * time.Minute)
+		if err := models.CreateMFAChallenge(h.DB, user.ID, challengeToken, expiresAt); err != nil {
+			h.Logger.Error("failed to create MFA challenge", "error", err)
+			return fiber.ErrInternalServerError
+		}
+		c.Cookie(&fiber.Cookie{
+			Name:     "mfa_challenge",
+			Value:    challengeToken,
+			Path:     "/mfa/verify",
+			Expires:  expiresAt,
+			HTTPOnly: true,
+			SameSite: "Lax",
+		})
+		h.Logger.Info("MFA challenge issued", "username", user.Username, "ip", ip)
+		return c.Redirect("/mfa/verify", fiber.StatusSeeOther)
+	}
 
 	token, err := generateToken()
 	if err != nil {
@@ -132,6 +158,92 @@ func (h *Handler) Logout(c *fiber.Ctx) error {
 	}
 
 	return c.Redirect("/login", fiber.StatusSeeOther)
+}
+
+// MFAVerifyPage renders the TOTP code entry form (GET /mfa/verify).
+func (h *Handler) MFAVerifyPage(c *fiber.Ctx) error {
+	if c.Cookies("mfa_challenge") == "" {
+		return c.Redirect("/login", fiber.StatusSeeOther)
+	}
+	return h.render(c, "mfa_verify", struct {
+		BaseData
+		Error string
+	}{})
+}
+
+// MFAVerify validates the submitted TOTP code and, on success, creates a full
+// session (POST /mfa/verify).
+func (h *Handler) MFAVerify(c *fiber.Ctx) error {
+	ip := c.IP()
+
+	if !h.RL.IsAllowed(ip) {
+		return h.render(c, "mfa_verify", struct {
+			BaseData
+			Error string
+		}{Error: "Too many failed attempts. Please wait before trying again."})
+	}
+
+	challengeToken := c.Cookies("mfa_challenge")
+	if challengeToken == "" {
+		return c.Redirect("/login", fiber.StatusSeeOther)
+	}
+
+	challenge, err := models.GetMFAChallenge(h.DB, challengeToken)
+	if err != nil {
+		return c.Redirect("/login?error=mfa_expired", fiber.StatusSeeOther)
+	}
+
+	user, err := models.GetUserByID(h.DB, challenge.UserID)
+	if err != nil {
+		return c.Redirect("/login", fiber.StatusSeeOther)
+	}
+
+	if !totp.Validate(c.FormValue("code"), user.TOTPSecret.String) {
+		h.RL.RecordFailedAttempt(ip)
+		h.Logger.Warn("invalid TOTP code", "user_id", user.ID, "ip", ip)
+		return h.render(c, "mfa_verify", struct {
+			BaseData
+			Error string
+		}{Error: "Invalid code. Please try again."})
+	}
+
+	_ = models.DeleteMFAChallenge(h.DB, challengeToken)
+	h.RL.Reset(ip)
+
+	// Clear the MFA challenge cookie.
+	c.Cookie(&fiber.Cookie{
+		Name:     "mfa_challenge",
+		Value:    "",
+		Path:     "/mfa/verify",
+		Expires:  time.Now().Add(-time.Hour),
+		MaxAge:   -1,
+		HTTPOnly: true,
+	})
+
+	sessionToken, err := generateToken()
+	if err != nil {
+		return fiber.ErrInternalServerError
+	}
+	expiresAt := time.Now().Add(time.Duration(h.Config.SessionDuration) * time.Hour)
+	if err := models.CreateSession(h.DB, user.ID, sessionToken, expiresAt); err != nil {
+		return fiber.ErrInternalServerError
+	}
+	c.Cookie(&fiber.Cookie{
+		Name:     middleware.SessionCookieName,
+		Value:    sessionToken,
+		Path:     "/",
+		Expires:  expiresAt,
+		HTTPOnly: true,
+		SameSite: "Lax",
+	})
+
+	h.logAction(&user.ID, models.ActionLogin, "", fmt.Sprintf(`{"ip":"%s","mfa":true}`, ip))
+	h.Logger.Info("user logged in with MFA", "username", user.Username, "ip", ip)
+
+	if user.Role == models.RoleAdmin {
+		return c.Redirect("/admin", fiber.StatusSeeOther)
+	}
+	return c.Redirect("/dashboard", fiber.StatusSeeOther)
 }
 
 // ──────────────────────────────────────────────────────────────

@@ -246,6 +246,29 @@ func (h *Handler) ProvisionWorkspace(c *fiber.Ctx) error {
 		fmt.Sprintf("Workspace provisioned for '%s': instance %s at %s", target.Username, instanceID, publicIP), "")
 }
 
+// ResetMFA disables MFA for a user without requiring their TOTP code.
+// Used by admins for account recovery when a user loses their authenticator.
+// POST /admin/users/:id/reset-mfa
+func (h *Handler) ResetMFA(c *fiber.Ctx) error {
+	userID, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "Invalid user ID")
+	}
+
+	if err := models.DisableTOTP(h.DB, userID); err != nil {
+		h.Logger.Error("reset MFA failed", "user_id", userID, "error", err)
+		return h.redirectAdmin(c, "", fmt.Sprintf("Failed to reset MFA: %v", err))
+	}
+
+	if err := models.DeleteUserSessions(h.DB, userID); err != nil {
+		h.Logger.Warn("failed to clear sessions after MFA reset", "user_id", userID, "error", err)
+	}
+
+	adminUser := middleware.GetUser(c)
+	h.Logger.Info("admin reset MFA", "admin", adminUser.Username, "user_id", userID)
+	return h.redirectAdmin(c, "MFA has been disabled for the user. Their sessions have been invalidated.", "")
+}
+
 // AppLogs returns the last 200 lines of the application log file as JSON.
 // GET /admin/app-logs
 func (h *Handler) AppLogs(c *fiber.Ctx) error {

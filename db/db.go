@@ -104,8 +104,10 @@ func createSchema(db *sql.DB) error {
 // a database that was created before these columns existed).
 func migrateSchema(db *sql.DB) error {
 	migrations := []string{
-		`ALTER TABLE users ADD COLUMN totp_secret  TEXT`,
-		`ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE users ADD COLUMN totp_secret             TEXT`,
+		`ALTER TABLE users ADD COLUMN totp_enabled            INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE users ADD COLUMN workspace_password      TEXT`,
+		`ALTER TABLE users ADD COLUMN workspace_guard_password TEXT`,
 	}
 	for _, stmt := range migrations {
 		if err := addColumnIfMissing(db, stmt); err != nil {

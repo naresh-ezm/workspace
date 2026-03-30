@@ -48,6 +48,8 @@ export interface AdminUser {
 	instance_id: string | null;
 	created_at: string;
 	totp_enabled: boolean;
+	workspace_password: string | null;
+	workspace_guard_password: string | null;
 }
 
 export interface AdminInstance {
@@ -113,6 +115,13 @@ export const api = {
 		fetchJSON(`/admin/users/${userId}/reset-mfa`, { method: 'POST', body: '{}' }),
 	deleteUser: (userId: number): Promise<{ message: string }> =>
 		fetchJSON(`/admin/users/${userId}/delete`, { method: 'POST', body: '{}' }),
-	provisionWorkspace: (userId: number): Promise<{ message: string }> =>
-		fetchJSON(`/admin/users/${userId}/provision`, { method: 'POST', body: '{}' })
+	provisionWorkspace: (
+		userId: number,
+		devPassword: string,
+		guardPassword: string
+	): Promise<{ message: string }> =>
+		fetchJSON(`/admin/users/${userId}/provision`, {
+			method: 'POST',
+			body: JSON.stringify({ dev_password: devPassword, guard_password: guardPassword })
+		})
 };

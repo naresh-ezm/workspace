@@ -1,3 +1,51 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+
+@theme {
+  --color-forest-950: #091413;
+  --color-forest-900: #0D1F1C;
+  --color-forest-800: #163328;
+  --color-forest-700: #1E4636;
+  --color-forest-600: #285A48;
+  --color-forest-500: #357A61;
+  --color-forest-400: #408A71;
+  --color-forest-300: #6BBFA0;
+  --color-forest-200: #8DD4B8;
+  --color-forest-100: #B0E4CC;
+  --color-forest-50: #E5F8EE;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #091413;
+  color: #B0E4CC;
+}
+
+/* Override @tailwindcss/forms defaults for dark theme */
+[type='text'],
+[type='password'],
+[type='email'],
+[type='number'],
+select,
+textarea {
+  background-color: #163328 !important;
+  border-color: #285A48 !important;
+  color: #E5F8EE !important;
+}
+
+[type='text']::placeholder,
+[type='password']::placeholder,
+[type='email']::placeholder,
+[type='number']::placeholder,
+textarea::placeholder {
+  color: #408A71 !important;
+}
+
+select option {
+  background-color: #163328;
+  color: #E5F8EE;
+}

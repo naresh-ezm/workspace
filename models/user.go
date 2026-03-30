@@ -15,14 +15,16 @@ const (
 
 // User represents a row in the users table.
 type User struct {
-	ID          int64
-	Username    string
-	PINHash     string
-	Role        Role
-	InstanceID  sql.NullString
-	CreatedAt   time.Time
-	TOTPSecret  sql.NullString
-	TOTPEnabled bool
+	ID                    int64
+	Username              string
+	PINHash               string
+	Role                  Role
+	InstanceID            sql.NullString
+	CreatedAt             time.Time
+	TOTPSecret            sql.NullString
+	TOTPEnabled           bool
+	WorkspacePassword     sql.NullString
+	WorkspaceGuardPassword sql.NullString
 }
 
 // GetUserByUsername fetches a user by their username.
@@ -30,10 +32,12 @@ func GetUserByUsername(db *sql.DB, username string) (*User, error) {
 	u := &User{}
 	err := db.QueryRow(
 		`SELECT id, username, pin_hash, role, instance_id, created_at,
-		        totp_secret, totp_enabled
+		        totp_secret, totp_enabled,
+		        workspace_password, workspace_guard_password
 		 FROM users WHERE username = ?`, username,
 	).Scan(&u.ID, &u.Username, &u.PINHash, &u.Role, &u.InstanceID, &u.CreatedAt,
-		&u.TOTPSecret, &u.TOTPEnabled)
+		&u.TOTPSecret, &u.TOTPEnabled,
+		&u.WorkspacePassword, &u.WorkspaceGuardPassword)
 	if err != nil {
 		return nil, err
 	}
@@ -45,10 +49,12 @@ func GetUserByID(db *sql.DB, id int64) (*User, error) {
 	u := &User{}
 	err := db.QueryRow(
 		`SELECT id, username, pin_hash, role, instance_id, created_at,
-		        totp_secret, totp_enabled
+		        totp_secret, totp_enabled,
+		        workspace_password, workspace_guard_password
 		 FROM users WHERE id = ?`, id,
 	).Scan(&u.ID, &u.Username, &u.PINHash, &u.Role, &u.InstanceID, &u.CreatedAt,
-		&u.TOTPSecret, &u.TOTPEnabled)
+		&u.TOTPSecret, &u.TOTPEnabled,
+		&u.WorkspacePassword, &u.WorkspaceGuardPassword)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +65,8 @@ func GetUserByID(db *sql.DB, id int64) (*User, error) {
 func ListUsers(db *sql.DB) ([]*User, error) {
 	rows, err := db.Query(
 		`SELECT id, username, pin_hash, role, instance_id, created_at,
-		        totp_secret, totp_enabled
+		        totp_secret, totp_enabled,
+		        workspace_password, workspace_guard_password
 		 FROM users ORDER BY id`,
 	)
 	if err != nil {
@@ -71,12 +78,22 @@ func ListUsers(db *sql.DB) ([]*User, error) {
 	for rows.Next() {
 		u := &User{}
 		if err := rows.Scan(&u.ID, &u.Username, &u.PINHash, &u.Role, &u.InstanceID, &u.CreatedAt,
-			&u.TOTPSecret, &u.TOTPEnabled); err != nil {
+			&u.TOTPSecret, &u.TOTPEnabled,
+			&u.WorkspacePassword, &u.WorkspaceGuardPassword); err != nil {
 			return nil, err
 		}
 		users = append(users, u)
 	}
 	return users, rows.Err()
+}
+
+// UpdateWorkspaceCredentials stores the plaintext dev and guard passwords for a user's workspace.
+func UpdateWorkspaceCredentials(db *sql.DB, userID int64, devPassword, guardPassword string) error {
+	_, err := db.Exec(
+		`UPDATE users SET workspace_password = ?, workspace_guard_password = ? WHERE id = ?`,
+		devPassword, guardPassword, userID,
+	)
+	return err
 }
 
 // CreateUser inserts a new user record.

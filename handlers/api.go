@@ -458,12 +458,14 @@ func (h *Handler) APIAdminDashboard(c *fiber.Ctx) error {
 	usersJSON := make([]fiber.Map, len(users))
 	for i, u := range users {
 		usersJSON[i] = fiber.Map{
-			"id":           u.ID,
-			"username":     u.Username,
-			"role":         u.Role,
-			"instance_id":  nullStringVal(u.InstanceID),
-			"created_at":   u.CreatedAt.Format("02 Jan 2006"),
-			"totp_enabled": u.TOTPEnabled,
+			"id":                      u.ID,
+			"username":                u.Username,
+			"role":                    u.Role,
+			"instance_id":             nullStringVal(u.InstanceID),
+			"created_at":              u.CreatedAt.Format("02 Jan 2006"),
+			"totp_enabled":            u.TOTPEnabled,
+			"workspace_password":      nullStringVal(u.WorkspacePassword),
+			"workspace_guard_password": nullStringVal(u.WorkspaceGuardPassword),
 		}
 	}
 
@@ -639,9 +641,25 @@ func (h *Handler) APIProvisionWorkspace(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Workspace provisioning is not configured (missing AMI, subnet, or security group)."})
 	}
 
+	var body struct {
+		DevPassword   string `json:"dev_password"`
+		GuardPassword string `json:"guard_password"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body."})
+	}
+	if body.DevPassword == "" || body.GuardPassword == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "dev_password and guard_password are required."})
+	}
+
 	adminUser := middleware.GetUser(c)
 	nameTag := fmt.Sprintf("workspace-%s", target.Username)
 	h.Logger.Info("provisioning workspace", "admin", adminUser.Username, "for_user", target.Username)
+
+	userData, err := awsclient.BuildSetupScript(target.Username, body.DevPassword, body.GuardPassword)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": fmt.Sprintf("Failed to build setup script: %v", err)})
+	}
 
 	instanceID, err := h.EC2.LaunchInstance(c.Context(), awsclient.WorkspaceLaunchInput{
 		AMIID:           cfg.WorkspaceAMI,
@@ -650,6 +668,7 @@ func (h *Handler) APIProvisionWorkspace(c *fiber.Ctx) error {
 		SecurityGroupID: cfg.WorkspaceSecurityGroupID,
 		SubnetID:        cfg.WorkspaceSubnetID,
 		NameTag:         nameTag,
+		UserData:        userData,
 	})
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": fmt.Sprintf("Failed to launch instance: %v", err)})
@@ -674,6 +693,11 @@ func (h *Handler) APIProvisionWorkspace(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": fmt.Sprintf("Instance %s launched at %s but DB update failed: %v", instanceID, publicIP, err),
 		})
+	}
+
+	if err := models.UpdateWorkspaceCredentials(h.DB, userID, body.DevPassword, body.GuardPassword); err != nil {
+		h.Logger.Error("UpdateWorkspaceCredentials failed", "user_id", userID, "error", err)
+		// Non-fatal: instance is running; log and continue.
 	}
 
 	meta := fmt.Sprintf(`{"ami":"%s","instance_type":"%s","public_ip":"%s","provisioned_by":"%s"}`,

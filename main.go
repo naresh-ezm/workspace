@@ -17,7 +17,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/filesystem"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/gofiber/template/html/v2"
 
 	awsclient "ec2manager/aws"
 	"ec2manager/config"
@@ -68,13 +67,8 @@ func main() {
 	// ── Rate Limiter ──────────────────────────────────────────
 	rl := middleware.NewRateLimiter(5, 15*time.Minute, 15*time.Minute)
 
-	// ── Template Engine ───────────────────────────────────────
-	engine := html.New("./templates", ".html")
-	// engine.Reload(true) // uncomment for hot-reload during development
-
 	// ── Fiber App ────────────────────────────────────────────
 	app := fiber.New(fiber.Config{
-		Views:             engine,
 		ProxyHeader:       fiber.HeaderXForwardedFor,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -96,38 +90,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── Static Files ─────────────────────────────────────────
-	app.Static("/static", "./static")
-
-	// ── Legacy HTML Template Routes (kept for backward compat) ─
+	// ── Heartbeat (called by EC2 instances, not the frontend) ───
 	app.Post("/api/heartbeat", h.Heartbeat)
-	app.Get("/login", h.LoginPage)
-	app.Post("/login", h.Login)
-	app.Get("/mfa/verify", h.MFAVerifyPage)
-	app.Post("/mfa/verify", h.MFAVerify)
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.Redirect("/login", fiber.StatusSeeOther)
-	})
-
-	authMW := middleware.Auth(database)
-	app.Post("/logout", authMW, h.Logout)
-	app.Get("/mfa/setup", authMW, h.MFASetupPage)
-	app.Post("/mfa/setup", authMW, h.MFASetup)
-	app.Post("/mfa/disable", authMW, h.MFADisable)
-	app.Get("/dashboard", authMW, h.Dashboard)
-	app.Post("/start-instance", authMW, h.StartInstance)
-	app.Post("/stop-instance", authMW, h.StopInstance)
-
-	adminMW := middleware.AdminOnly
-	admin := app.Group("/admin", authMW, adminMW)
-	admin.Get("/", h.AdminDashboard)
-	admin.Get("/app-logs", h.AppLogs)
-	admin.Post("/users", h.AddUser)
-	admin.Post("/users/:id/assign", h.AssignInstance)
-	admin.Post("/users/:id/provision", h.ProvisionWorkspace)
-	admin.Post("/users/:id/reset-pin", h.ResetPIN)
-	admin.Post("/users/:id/reset-mfa", h.ResetMFA)
-	admin.Post("/users/:id/delete", h.DeleteUser)
 
 	// ── JSON API Routes (used by the Svelte frontend) ────────
 	apiAuthMW := h.APIAuthMW()

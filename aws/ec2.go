@@ -105,11 +105,12 @@ type WorkspaceLaunchInput struct {
 	SecurityGroupID string
 	SubnetID        string
 	NameTag         string // e.g. "workspace-alice"
+	UserData        string // base64-encoded cloud-init / shell script (optional)
 }
 
 // LaunchInstance starts one new instance from the given AMI and returns its instance ID.
 func (c *EC2Client) LaunchInstance(ctx context.Context, in WorkspaceLaunchInput) (string, error) {
-	out, err := c.client.RunInstances(ctx, &ec2.RunInstancesInput{
+	runInput := &ec2.RunInstancesInput{
 		ImageId:      aws.String(in.AMIID),
 		InstanceType: types.InstanceType(in.InstanceType),
 		MinCount:     aws.Int32(1),
@@ -132,7 +133,11 @@ func (c *EC2Client) LaunchInstance(ctx context.Context, in WorkspaceLaunchInput)
 				},
 			},
 		},
-	})
+	}
+	if in.UserData != "" {
+		runInput.UserData = aws.String(in.UserData)
+	}
+	out, err := c.client.RunInstances(ctx, runInput)
 	if err != nil {
 		return "", fmt.Errorf("run instances: %w", err)
 	}

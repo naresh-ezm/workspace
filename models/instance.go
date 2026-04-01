@@ -60,6 +60,19 @@ func GetInstance(db *sql.DB, instanceID string) (*Instance, error) {
 	return inst, nil
 }
 
+// ResetInstanceTimers sets last_heartbeat_at and last_active_at to NOW() and
+// marks the instance as idle. Call this after an auto-stop so that the idle
+// clock restarts from zero when the instance is later brought back up.
+func ResetInstanceTimers(db *sql.DB, instanceID string) error {
+	now := time.Now()
+	_, err := db.Exec(`
+		UPDATE instances
+		SET last_heartbeat_at = ?, last_active_at = ?, status = ?
+		WHERE instance_id = ?`,
+		now, now, StatusIdle, instanceID)
+	return err
+}
+
 // ListInstances returns all tracked instances.
 func ListInstances(db *sql.DB) ([]*Instance, error) {
 	rows, err := db.Query(

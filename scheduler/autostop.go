@@ -137,6 +137,12 @@ func (s *Scheduler) evaluateInstance(inst *models.Instance) {
 		return
 	}
 
+	// Reset the idle timer so that if a developer restarts the instance the
+	// scheduler does not immediately re-stop it due to the stale timestamps.
+	if err := models.ResetInstanceTimers(s.db, inst.InstanceID); err != nil {
+		s.logger.Error("scheduler: failed to reset instance timers", "error", err)
+	}
+
 	meta := fmt.Sprintf(
 		`{"idle_seconds":%d,"threshold_seconds":%d,"weekday":"%s"}`,
 		int(idleDuration.Seconds()),
